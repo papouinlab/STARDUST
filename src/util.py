@@ -5,7 +5,7 @@ from PIL import Image
 def prompt_user_input():
 
     ''' prompt user inputs for analysis and directly store inputs as global variables '''
-    global input_dir, keyword, output_dir, drug_frame, experiment_date, mouse_ID, slice_number, frame_rate, output_filename, output_path
+    global input_dir, keyword, output_dir, experiment_date, mouse_ID, slice_number, drug_frame, frame_rate, output_path
 
     # input input and output directories
     input_dir = input('Enter the path to the folder containing the input files: ')
@@ -21,24 +21,24 @@ def prompt_user_input():
     output_filename = input('Enter the output file name: ') + '.xlsx'
     output_path = os.path.join(output_dir, output_filename)
  
-def find_files(input_dir, keyword = ""):
+def find_files(input_dir, keyword):
     '''takes an input directory and find the trace csv file, ROA mask tif, cell mask tif, and metadata path'''
 
     input_files = os.listdir(input_dir)
     input_files = [f.lower() for f in input_files]
 
     exp_index = [keyword.lower() in f for f in input_files]
-    exp_files = input_files[exp_index.index(True)]
-
-    csv_index = ['.csv' in f for f in input_files]
-    ROA_index = ['roa' in f for f in input_files]
-    cell_index = ['cell' in f for f in input_files]
+    exp_files = np.take(input_files, np.where(exp_index)[0])
     
-    csv_path = os.path.join(input_dir, input_files[csv_index.index(True)])
-    ROA_mask_path = os.path.join(input_dir, input_files[ROA_index.index(True)])
-    cell_mask_path = os.path.join(input_dir, input_files[cell_index.index(True)])
+    csv_index = ['.csv' in f for f in exp_files]
+    ROA_index = ['roa' in f for f in exp_files]
+    cell_index = ['cell' in f for f in exp_files]
     
-    print("Found the following files: ")
+    csv_path = os.path.join(input_dir, exp_files[csv_index.index(True)])
+    ROA_mask_path = os.path.join(input_dir, exp_files[ROA_index.index(True)])
+    cell_mask_path = os.path.join(input_dir, exp_files[cell_index.index(True)])
+    
+    print("Found the following files: \n")
     print("CSV file: ", csv_path)
     print("ROA mask: ", ROA_mask_path)
     print("Cell mask: ", cell_mask_path)
@@ -138,7 +138,7 @@ def check_correction(filtered_traces, corrected_traces, reg):
             plt.plot(x, x * reg.slope[i_ROA] + reg.intercept[i_ROA], 'r-', label = 'regression line')
             plt.plot(x, corrected_traces[i_ROA], 'g-', label = 'corrected trace')
             plt.legend(loc = "upper left")
-            plt.title('ROA ' + str(i_ROA))
+            plt.title('ROA ' + str(i_ROA + 1)) # ROA ID starts from 1
             plt.show()
 
 def mean_abs_dist(array_2d):
@@ -187,7 +187,6 @@ def find_signal_boundary(trace, signal_threshold, baseline_threshold):
     signal_boundary = [(math.floor(lpoint),math.ceil(rpoint)) for (lpoint,rpoint) in signal_list]
     return signal_boundary, signal_intercept, baseline_intercept
 
-
 def calc_dff(filtered_traces, signal_frames = None):
     # generate a two-dimensional array from filtered_traces but free of signal frames
     if signal_frames is None: 
@@ -202,7 +201,6 @@ def calc_dff(filtered_traces, signal_frames = None):
     dff_traces_nosignal[dff_traces_nosignal == 0] = np.nan # change 0 to nan to remove signal frames in calculation
 
     return dff_traces, dff_traces_nosignal
-
 
 def find_signal_frames(filtered_traces, signal_frames = None, signal_threshold = 3):
    
@@ -232,7 +230,7 @@ def find_signal_frames(filtered_traces, signal_frames = None, signal_threshold =
 
     # iterate through each ROA to find signals
     for i_ROA in range(0, ROA_count):
-        signal_boundary = find_signal_boundary(dff_traces[i_ROA,], thresholds[i_ROA], baselines[i_ROA])
+        signal_boundary, _ , _ = find_signal_boundary(dff_traces[i_ROA,], thresholds[i_ROA], baselines[i_ROA])
         signal_boundaries.append(signal_boundary)
 
         for j_frame in range(0, frame_count):
@@ -247,19 +245,19 @@ def iterative_baseline(filtered_traces, signal_frames = None):
     '''
     determine the bassline iteratively
     '''
-
+    signal_frames_previous = signal_frames
     n_iteration = int(input("Enter the number of iterations for signal detection (e.g. 3): "))
     print()
 
     for iter in range(n_iteration):
         print(f"Processing round {iter+1} of signal detection...")
-        if iter < n_iteration - 1:
-            _ , _, _, signal_frames, _ = find_signal_frames(filtered_traces, signal_frames)
+        if iter < n_iteration - 1: # only store signal_frames for the initial iterations
+            _ , _, _, signal_frames, _ = find_signal_frames(filtered_traces, signal_frames_previous)
         else:
-            dff_traces, baselines, thresholds, signal_frames, signal_boundaries = find_signal_frames(filtered_traces, signal_frames)
+            dff_traces, baselines, thresholds, signal_frames, signal_boundaries = find_signal_frames(filtered_traces, signal_frames_previous)
         
+        check_ROA(signal_frames) # check current signal detection results
         signal_frames_previous = signal_frames
-        check_ROA(signal_frames)
         print()
     
     return dff_traces, baselines, thresholds, signal_frames, signal_boundaries
@@ -408,3 +406,27 @@ def ROA_analysis(signal_stats, df_ROA_cell):
 
     return ROA_based, df_ROA_cell
 
+def inspect_trace(ROA_ID = None):
+    
+    ''' 
+    inspect trace visually with baseline, signal threshold and drug application time indicated
+    
+    Args:
+    ROA_ID: input ROA_ID (int) to visually inspect
+    '''
+    
+    global dff_traces, baselines, thresholds, drug_frame
+
+    x = np.arange(frame_count)
+
+    # indexing with ROA_ID - 1 because python...
+    plt.figure(figsize=(10,5))
+    plt.plot(x,dff_traces[ROA_ID-1],color = 'grey')
+    plt.axhline(y = baselines[ROA_ID-1], color = 'r', linestyle = '-', label = "baseline")
+    plt.axhline(y = thresholds[ROA_ID-1], color = 'g', linestyle = '-', label = "threshold")
+    plt.axvline(x = drug_frame, color = 'b', alpha = 0.5, label = "drug application")
+    plt.legend(loc = 'upper left')
+    plt.xlabel("Frame")
+    plt.ylabel("dF/F")
+    plt.title('ROA ID: ' + str(ROA_ID))
+    plt.show(block = False)
