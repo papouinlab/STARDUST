@@ -173,8 +173,11 @@ def find2points(number, array):
     return (lpoint, rpoint)
 
 def find_signal_boundary(trace, signal_threshold, baseline_threshold):
-    ''' takes a 1D trace, signal_threshold, and baseline_threshold (to call beginning and end of an event)
-    return tuples of event start and end points (frames) '''
+    ''' 
+    takes a 1D trace, signal_threshold, and baseline_threshold (to call beginning and end of an event)
+    return tuples of event start and end points (frames) 
+    '''
+
     signal_intercept = find_roots(trace, signal_threshold)
     baseline_intercept = find_roots(trace, baseline_threshold)
 
@@ -187,22 +190,39 @@ def find_signal_boundary(trace, signal_threshold, baseline_threshold):
     signal_boundary = [(math.floor(lpoint),math.ceil(rpoint)) for (lpoint,rpoint) in signal_list]
     return signal_boundary, signal_intercept, baseline_intercept
 
-def calc_dff(filtered_traces, signal_frames = None):
-    # generate a two-dimensional array from filtered_traces but free of signal frames
-    if signal_frames is None: 
-        signal_frames = np.zeros(filtered_traces.shape) # if signal_frames are not provided, assume no frame is signal
-    filtered_traces_nosignal = np.multiply(filtered_traces, signal_frames == False) # set signal frames to 0
-    filtered_traces_nosignal[filtered_traces_nosignal == 0] = np.nan # change 0 to nan to remove signal frames in calculation
+def calc_dff(traces, signal_frames = None, baseline_start = 0, baseline_end = -1):
 
-    baselines = np.nanmean(filtered_traces_nosignal, axis = 1) # calculate the baseline averages from signal-removed traces (ignoring nan)
-    dff_traces = (filtered_traces - baselines[:,None])/baselines[:,None] 
+    ''' 
+    generates df/f traces based on signal frames 
+    designed to work with filtered/smoothed traces but can also work on raw traces
+    returns two two-dimensional arrays: dff_traces and dff_traces_nosignal
+
+    Args:
+    traces: a two-dimensional array of traces, each row represents a ROA and each column represents a frame
+    signal_frames: a two-dimensional boolean array corresponding to each ROA and each frame, true if frame is considered as signal
+    baseline_start: optional, the starting frame for baseline calculation, default 0
+    baseline_end: optional, the ending frame for baseline calculation, default -1 (end of the trace)
+
+    Returns:
+    dff_traces: a two-dimensional array of delta F/F trace based on the provided thresholds
+    dff_traces_nosignal: a two-dimensional array of delta F/F trace based on the provided thresholds but free of signal frames (signal frames are set as NaN)
+    '''
+
+    # generate a two-dimensional array from traces but free of signal frames
+    if signal_frames is None: 
+        signal_frames = np.zeros(traces.shape) # if signal_frames are not provided, assume no frame is signal
+    traces_nosignal = np.multiply(traces, signal_frames == False) # set signal frames to 0
+    traces_nosignal[traces_nosignal == 0] = np.nan # change 0 to nan to remove signal frames in calculation
+
+    baselines = np.nanmean(traces_nosignal[:,baseline_start:baseline_end], axis = 1) # calculate the baseline averages from signal-removed traces (ignoring nan)
+    dff_traces = (traces - baselines[:,None])/baselines[:,None] 
 
     dff_traces_nosignal = np.multiply(dff_traces, signal_frames == False) # set signal frames to 0
     dff_traces_nosignal[dff_traces_nosignal == 0] = np.nan # change 0 to nan to remove signal frames in calculation
 
     return dff_traces, dff_traces_nosignal
 
-def find_signal_frames(filtered_traces, signal_frames = None, signal_threshold = 3):
+def find_signal_frames(filtered_traces, signal_frames = None, signal_threshold = 3, baseline_start = 0, baseline_end = -1):
    
     '''
     finds signals in the filtered traces using signal_threshold and onset_threshold
@@ -211,7 +231,10 @@ def find_signal_frames(filtered_traces, signal_frames = None, signal_threshold =
     Args:
         filtered_traces: a two-dimensional array of filtered traces
         signal_frames: a two-dimensional boolean array corresponding to each ROA and each frame, true if frame is considered as signal
-        signal_threshold (int or float): signal_threshold (3 as default) * dF/F baseline SD as signal threshold
+        signal_threshold (int or float): optional, signal_threshold (3 as default) * dF/F baseline SD as signal threshold
+        baseline_start: optional, the starting frame for baseline calculation, default 0 (beginning of the recording)
+        baseline_end: optional, the ending frame for baseline calculation, default -1 (end of the recording)
+
 
     Returns:
         dff_traces: a two-dimensional array of delta F/F trace based on the provided thresholds
@@ -219,7 +242,7 @@ def find_signal_frames(filtered_traces, signal_frames = None, signal_threshold =
         signal_boundaries: each ROA has a list of tuples of event start and end points
     '''
     
-    dff_traces, dff_traces_nosignal = calc_dff(filtered_traces, signal_frames) 
+    dff_traces, dff_traces_nosignal = calc_dff(filtered_traces, signal_frames, baseline_start, baseline_end) 
     baselines = np.nanmean(dff_traces_nosignal, axis = 1) # calculate the baseline averages from signal-removed dff traces (ignoring nan)
     thresholds = signal_threshold * np.nanstd(dff_traces_nosignal, axis = 1) # calculate the baseline standard deviations from signal-removed dff traces (ignoring nan)
     
@@ -406,7 +429,7 @@ def ROA_analysis(signal_stats, df_ROA_cell):
 
     return ROA_based, df_ROA_cell
 
-def inspect_trace(ROA_ID = None):
+def inspect_trace(ROA_ID, dff_traces, baselines, thresholds):
     
     ''' 
     inspect trace visually with baseline, signal threshold and drug application time indicated
@@ -414,9 +437,7 @@ def inspect_trace(ROA_ID = None):
     Args:
     ROA_ID: input ROA_ID (int) to visually inspect
     '''
-    
-    global dff_traces, baselines, thresholds, drug_frame
-
+    ROA_count, frame_count = dff_traces.shape
     x = np.arange(frame_count)
 
     # indexing with ROA_ID - 1 because python...
