@@ -561,7 +561,7 @@ if To_write == 'y':
     df_final = pd.DataFrame(FinalOutput,columns = ['Trace Number','Amplitude','Duration','Halfwidth','Area Under Curve','Rise Time','Decay Time','Signal Onset','Peak Time','SNR'])
     df_final['Cell number'] = df_final['Trace Number'].map(region_map)
     
-    # Para_10: Optional section for selecting the framees of interst for analysis.
+    # Para_10: Optional section for selecting the framees of interest for analysis.
     # df_final = df_final[(df_final['Signal Onset'].between (drug_frame-100, drug_frame )) | (df_final['Signal Onset']).between(drug_frame+100, drug_frame+200)] 
 
     df_final['Drug'] = np.where(df_final['Signal Onset']< drug_frame,'Before Drug',"After Drug")
