@@ -292,7 +292,7 @@ def check_ROA(signal_frames):
     print("ROAs with signal: ", np.sum(ROAs_with_signal))
     print("ROAs without signal: ", np.sum(ROAs_with_signal == False))
 
-def analyze_signal(dff_traces, signal_frames, signal_boundaries, frame_rate, drug_frame = 'NA'):
+def analyze_signal(dff_traces, signal_frames, signal_boundaries, frame_rate, drug_frame):
 
     '''analyze the signals and return a dataframe with signal stats (columns) for each individual signal/event (rows)'''
     
@@ -366,10 +366,11 @@ def analyze_signal(dff_traces, signal_frames, signal_boundaries, frame_rate, dru
                                  'inter_event_interval': inter_event_interval})
     
     # add column to indicate if the signal starts before drug application (True) or after (False)
-    if drug_frame != 'NA':
-        signal_stats['Drug'] = np.where(signal_stats['signal_start_index'] < drug_frame, 'Before', 'After')
-    else:
+    if drug_frame == 0:
         signal_stats['Drug'] = 'NA'
+    else:
+        signal_stats['Drug'] = np.where(signal_stats['signal_start_index'] < drug_frame, 'Before', 'After')
+        
                                  
     return signal_stats
 
