@@ -394,9 +394,16 @@ def align_ROA_cell(ROA_map_labeled, cell_map_labeled, ROA_map_count):
 
     for i_ROA in ROA:
         cell_assigned = cell_map_labeled[ROA_map_labeled == i_ROA] # find corresponding cell ID for each pixel inside a ROA
-        ROA_cell.append(scipy.stats.mode(cell_assigned, keepdims = False).mode) # assign the most common cell ID for the ROA as its cell registration
+        most_frequent = scipy.stats.mode(cell_assigned, keepdims = False).mode # find the most common cell ID inside the ROA
+        if most_frequent == 0: # if the most common cell ID is 0, then find the second most common cell ID
+            if len(np.unique(cell_assigned[cell_assigned != 0])) != 0:
+                most_frequent = scipy.stats.mode(cell_assigned[cell_assigned != 0], axis = None).mode
+            else:
+                print("ROI ", i_ROA, " has no cell ID assigned. Check cell mask.") # print out warning sign
+        ROA_cell.append(most_frequent) # assign the most common cell ID for the ROA as its cell registration
 
     df_ROA_cell = pd.DataFrame({'ROA_ID': ROA, 'cell_ID': ROA_cell})
+    print("ROA and cell alignment completed.")
     return df_ROA_cell
 
 def ROA_analysis(signal_stats, df_ROA_cell):
