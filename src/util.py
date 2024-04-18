@@ -69,8 +69,6 @@ def raw_to_filtered(csv_path, order = 4, cutoff = 0.4):
     # and transform to a numpy 2D array containing # of ROA lists,
     # each list containing signal in each frame for this ROA
     raw_traces = raw_data.transpose().to_numpy() 
-    ROA_count, frame_count = check_traces(raw_traces)
-    print()
 
     # apply a lowpass Butterworth filter with a 4th order filter at the cutoff of 0.4 Hz
     print("Applying a lowpass Butterworth filter with a", str(order), "th order filter at the cutoff of", str(cutoff), "Hz")
@@ -263,7 +261,7 @@ def find_signal_frames(filtered_traces, signal_frames = None, signal_threshold =
                     
     return dff_traces, baselines, thresholds, new_signal_frames.astype(bool), signal_boundaries
 
-def iterative_baseline(filtered_traces, signal_frames = None):
+def iterative_baseline(filtered_traces, signal_frames = None, signal_threshold = 3, baseline_start = 0, baseline_end = -1):
 
     '''
     determine the bassline iteratively
@@ -275,9 +273,9 @@ def iterative_baseline(filtered_traces, signal_frames = None):
     for iter in range(n_iteration):
         print(f"Processing round {iter+1} of signal detection...")
         if iter < n_iteration - 1: # only store signal_frames for the initial iterations
-            _ , _, _, signal_frames, _ = find_signal_frames(filtered_traces, signal_frames_previous)
+            _ , _, _, signal_frames, _ = find_signal_frames(filtered_traces, signal_frames_previous, signal_threshold = 3, baseline_start = 0, baseline_end = -1)
         else:
-            dff_traces, baselines, thresholds, signal_frames, signal_boundaries = find_signal_frames(filtered_traces, signal_frames_previous)
+            dff_traces, baselines, thresholds, signal_frames, signal_boundaries = find_signal_frames(filtered_traces, signal_frames_previous, signal_threshold = 3, baseline_start = 0, baseline_end = -1)
         
         check_ROA(signal_frames) # check current signal detection results
         signal_frames_previous = signal_frames
@@ -405,10 +403,11 @@ def ROA_analysis(signal_stats, df_ROA_cell):
     '''analyze the signals based on the ROA and return a dataframe with ROA stats (columns) for each individual ROA (rows)'''
 
     # calculate the signal stats based on ROA
-    cols = ['AUC','amplitude','signal_to_noise','rise_time','decay_time','half_width','duration','inter_event_interval']
+    
     ROA_based_count = signal_stats.groupby(['ROA_ID', 'Drug'], as_index = False).count()
     ROA_based = signal_stats.groupby(['ROA_ID', 'Drug'], as_index = False).mean()
     ROA_based['signal_count'] = ROA_based_count['AUC']
+    
 
     # identify ROA type based on activity before and after drug application
     ROA = range(1, ROA_count + 1)
@@ -416,21 +415,24 @@ def ROA_analysis(signal_stats, df_ROA_cell):
     for i_ROA in ROA:
         df = ROA_based[ROA_based.ROA_ID == i_ROA]
         
-        if len(df) == 2:
+        if 'NA' in df.Drug.unique():
+            ROA_type.append('NA')
+        elif 'Before' in df.Drug.unique() and 'After' in df.Drug.unique():
             ROA_type.append('stable')
-        elif len(df) == 1:
-            if int(df.Drug == 'Before'): # force into a int to bypass series ambiguity
-                ROA_type.append('off')
-            else:
-                ROA_type.append('on')
+        elif 'Before' in df.Drug.unique():
+            ROA_type.append('off')
+        elif 'After' in df.Drug.unique():
+            ROA_type.append('on')
         else:
             ROA_type.append('inactive')
+
     df_ROA_cell['ROA_type'] = ROA_type
     ROA_based = pd.merge(df_ROA_cell, ROA_based, on = ['ROA_ID', 'cell_ID'], how = 'left')
 
-    return ROA_based, df_ROA_cell
+    cols = ['ROA_ID','cell_ID','ROA_type','AUC','amplitude','signal_to_noise','rise_time','decay_time','half_width','duration','inter_event_interval', 'signal_count']
+    return ROA_based[cols], df_ROA_cell
 
-def inspect_trace(ROA_ID, dff_traces, baselines, thresholds, drug_frame = 'NA'):
+def inspect_trace(ROA_ID, dff_traces, baselines, thresholds, drug_frame):
     
     ''' 
     inspect trace visually with baseline, signal threshold and drug application time indicated
@@ -438,7 +440,7 @@ def inspect_trace(ROA_ID, dff_traces, baselines, thresholds, drug_frame = 'NA'):
     Args:
     ROA_ID: input ROA_ID (int) to visually inspect
     '''
-    ROA_count, frame_count = dff_traces.shape
+    frame_count = dff_traces.shape[1]
     x = np.arange(frame_count)
 
     # indexing with ROA_ID - 1 because python...
