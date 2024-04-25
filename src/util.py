@@ -29,14 +29,16 @@ def find_files(input_dir, keyword):
 
     exp_index = [keyword.lower() in f for f in input_files]
     exp_files = np.take(input_files, np.where(exp_index)[0])
-    
     csv_index = ['.csv' in f for f in exp_files]
-    ROA_index = ['roa' in f for f in exp_files]
-    cell_index = ['cell' in f for f in exp_files]
+
+    tif_index = ['.tif' in f for f in exp_files]
+    tif_files = np.take(exp_files, np.where(tif_index)[0])
+    ROA_index = ['roa' in f for f in tif_files]
+    cell_index = ['cell' in f for f in tif_files]
     
     csv_path = os.path.join(input_dir, exp_files[csv_index.index(True)])
-    ROA_mask_path = os.path.join(input_dir, exp_files[ROA_index.index(True)])
-    cell_mask_path = os.path.join(input_dir, exp_files[cell_index.index(True)])
+    ROA_mask_path = os.path.join(input_dir, tif_files[ROA_index.index(True)])
+    cell_mask_path = os.path.join(input_dir, tif_files[cell_index.index(True)])
     
     print("Found the following files: \n")
     print("CSV file: ", csv_path)
@@ -45,14 +47,28 @@ def find_files(input_dir, keyword):
 
     return csv_path, ROA_mask_path, cell_mask_path
 
-def read_masks(ROA_mask_path, cell_mask_path):
-    ROA_map_labeled, ROA_map_count = read_tif(ROA_mask_path)
-    cell_map_labeled, cell_count = read_tif(cell_mask_path)
+def read_tif(tif_path, type):
+    '''
+    read a binary tif file and return the labeled matrix and the number of labels
 
-    print("ROA mask contains", str(ROA_map_count), "ROAs")
-    print("Cell mask contains", str(cell_count), "cells")
+    ROAs are marked as 1 in the binary matrix
+    one ROA is defined as a group of connected pixels (including diagonally connected pixels)
+    '''
+    print("Reading in file: ", tif_path)
+    image = open(tif_path, 'rb').read()
+    map_tif = Image.open(io.BytesIO(image))
+    map_array = np.asarray(map_tif)
 
-    return ROA_map_labeled, ROA_map_count, cell_map_labeled, cell_count
+    # determine ROA and number of ROAs
+    if type == "ROA":
+        map_labeled, map_count = scipy.ndimage.label(map_array, structure = [[1,1,1],[1,1,1],[1,1,1]])
+        print("This ROA mask contains", str(map_count), "ROAs.")
+    elif type == "cell":
+        map_labeled, map_count = scipy.ndimage.label(map_array) 
+        print("This cell mask contains", str(map_count), "cells.")
+    print("/n")
+
+    return map_labeled, map_count
 
 def raw_to_filtered(csv_path, order = 4, cutoff = 0.4):
     '''
@@ -146,12 +162,15 @@ def mean_abs_dist(array_2d):
     return np.mean(np.absolute(array_2d - np.mean(array_2d, axis=1)[:,None]), axis=1)
 
 def find_roots(trace, threshold):
+    '''
+    input trace (1D array) and threshold (one number)
+    look for where the signal crosses threshold
+    return the x axis intercepts where the signal crosses threshold 
+    '''
+
     # this function does not account for when one point of signal is AT the threshold
     # which I guess rarely happens anyway
 
-    '''input trace (1D array) and threshold (one number)
-    look for where the signal crosses threshold
-    return the x axis intercepts where the signal crosses threshold '''
     trace_adjusted = trace - threshold
     cross_bool = np.abs(np.diff(np.sign(trace_adjusted))).astype(bool)
     
@@ -261,10 +280,24 @@ def find_signal_frames(filtered_traces, signal_frames = None, signal_threshold =
                     
     return dff_traces, baselines, thresholds, new_signal_frames.astype(bool), signal_boundaries
 
-def iterative_baseline(filtered_traces, signal_frames = None, signal_threshold = 3, baseline_start = 0, baseline_end = -1):
+def iterative_baseline(traces, signal_frames = None, signal_threshold = 3, baseline_start = 0, baseline_end = -1):
 
     '''
     determine the bassline iteratively
+
+    Args:
+    traces: a two-dimensional array of traces
+    signal_frames: optional, a two-dimensional boolean array corresponding to each ROA and each frame, true if frame is considered as signal
+    signal_threshold: optional, signal_threshold (3 as default) * dF/F baseline SD as signal threshold
+    baseline_start: optional, the starting frame for baseline calculation, default 0 (beginning of the recording)
+    baseline_end: optional, the ending frame for baseline calculation, default -1 (end of the recording)
+
+    Returns:
+    dff_traces: a two-dimensional array of delta F/F trace based on the provided thresholds
+    baselines: a one-dimensional array of baseline values
+    thresholds: a one-dimensional array of signal thresholds
+    signal_frames: a two-dimensional boolean array corresponding to each ROA and each frame, true if frame is considered as signal
+    signal_boundaries: a list of tuples of event start and end points of each detected activity in each ROA
     '''
     signal_frames_previous = signal_frames
     n_iteration = int(input("Enter the number of iterations for signal detection (e.g. 3): "))
@@ -273,9 +306,9 @@ def iterative_baseline(filtered_traces, signal_frames = None, signal_threshold =
     for iter in range(n_iteration):
         print(f"Processing round {iter+1} of signal detection...")
         if iter < n_iteration - 1: # only store signal_frames for the initial iterations
-            _ , _, _, signal_frames, _ = find_signal_frames(filtered_traces, signal_frames_previous, signal_threshold = 3, baseline_start = 0, baseline_end = -1)
+            _ , _, _, signal_frames, _ = find_signal_frames(traces, signal_frames_previous, signal_threshold = 3, baseline_start = 0, baseline_end = -1)
         else:
-            dff_traces, baselines, thresholds, signal_frames, signal_boundaries = find_signal_frames(filtered_traces, signal_frames_previous, signal_threshold = 3, baseline_start = 0, baseline_end = -1)
+            dff_traces, baselines, thresholds, signal_frames, signal_boundaries = find_signal_frames(traces, signal_frames_previous, signal_threshold = 3, baseline_start = 0, baseline_end = -1)
         
         check_ROA(signal_frames) # check current signal detection results
         signal_frames_previous = signal_frames
@@ -372,25 +405,12 @@ def analyze_signal(dff_traces, signal_frames, signal_boundaries, frame_rate, dru
                                  
     return signal_stats
 
-def read_tif(tif_path):
-    '''
-    read a binary tif file and return the labeled matrix and the number of labels
-
-    ROAs are marked as 1 in the binary matrix
-    one ROA is defined as a group of connected pixels (including diagonally connected pixels)
-    '''
-
-    image = open(tif_path, 'rb').read()
-    map_tif = Image.open(io.BytesIO(image))
-    map_array = np.asarray(map_tif)
-    map_labeled, map_num = scipy.ndimage.label(map_array, structure = [[1,1,1],[1,1,1],[1,1,1]]) # determine ROA and number of ROAs
-    return map_labeled, map_num
-
 def align_ROA_cell(ROA_map_labeled, cell_map_labeled, ROA_map_count):
-    ''' aline ROA_ID and cell_ID based on the labeled map'''
+    ''' aline ROA_ID and cell_ID based on the labeled map and returns a dataframe with ROA and cell alignment'''
 
     ROA = range(1, ROA_map_count+1)
     ROA_cell = []
+    ROA_not_assigned = []
 
     for i_ROA in ROA:
         cell_assigned = cell_map_labeled[ROA_map_labeled == i_ROA] # find corresponding cell ID for each pixel inside a ROA
@@ -399,10 +419,12 @@ def align_ROA_cell(ROA_map_labeled, cell_map_labeled, ROA_map_count):
             if len(np.unique(cell_assigned[cell_assigned != 0])) != 0:
                 most_frequent = scipy.stats.mode(cell_assigned[cell_assigned != 0], axis = None).mode
             else:
-                print("ROI ", i_ROA, " has no cell ID assigned. Check cell mask.") # print out warning sign
+                ROA_not_assigned.append(i_ROA)
         ROA_cell.append(most_frequent) # assign the most common cell ID for the ROA as its cell registration
 
     df_ROA_cell = pd.DataFrame({'ROA_ID': ROA, 'cell_ID': ROA_cell})
+    if len(ROA_not_assigned) != 0:
+        print("The following ROAs have not been assigned to any cell: ", ROA_not_assigned)
     print("ROA and cell alignment completed.")
     return df_ROA_cell
 
@@ -446,6 +468,10 @@ def inspect_trace(ROA_ID, dff_traces, baselines, thresholds, drug_frame):
     
     Args:
     ROA_ID: input ROA_ID (int) to visually inspect
+    dff_traces: 2D array of dF/F traces
+    baselines: 1D array of baseline values
+    thresholds: 1D array of signal thresholds
+    drug_frame: frame number of drug application (int)
     '''
     frame_count = dff_traces.shape[1]
     x = np.arange(frame_count)
