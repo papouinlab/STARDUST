@@ -436,10 +436,9 @@ def ROA_analysis(signal_stats, df_ROA_cell):
     ROA_based_count = signal_stats.groupby(['ROA_ID', 'Drug'], as_index = False).count()
     ROA_based = signal_stats.groupby(['ROA_ID', 'Drug'], as_index = False).mean()
     ROA_based['signal_count'] = ROA_based_count['AUC']
-    
 
     # identify ROA type based on activity before and after drug application
-    ROA = range(1, ROA_count + 1)
+    ROA = df_ROA_cell.ROA_ID
     ROA_type = []
     for i_ROA in ROA:
         df = ROA_based[ROA_based.ROA_ID == i_ROA]
