@@ -29,7 +29,7 @@ def find_files(input_dir, keyword):
 
     exp_index = [keyword.lower() in f for f in input_files]
     exp_files = np.take(input_files, np.where(exp_index)[0])
-    csv_index = ['.csv' in f for f in exp_files]
+    csv_index = ['signal.csv' in f for f in exp_files]
 
     tif_index = ['.tif' in f for f in exp_files]
     tif_files = np.take(exp_files, np.where(tif_index)[0])
@@ -66,7 +66,7 @@ def read_tif(tif_path, type):
     elif type == "cell":
         map_labeled, map_count = scipy.ndimage.label(map_array) 
         print("This cell mask contains", str(map_count), "cells.")
-    print("/n")
+    print("\n")
 
     return map_labeled, map_count
 
@@ -333,12 +333,14 @@ def analyze_signal(dff_traces, signal_frames, signal_boundaries, frame_rate, dru
 
     # initialize lists to store signal stats
     ROA_ID = []
-    start_index = []
-    end_index = []
+    start_frame = []
+    start_time = []
+    end_frame = []
+    end_time = []
     AUC = []
     amplitude = []
     signal_to_noise = []
-    peak_index = []
+    peak_frame = []
     peak_time = []
     rise_time = []
     decay_time = []
@@ -354,8 +356,10 @@ def analyze_signal(dff_traces, signal_frames, signal_boundaries, frame_rate, dru
             (lpoint, rpoint) = signal_boundaries[i_ROA][j_signal]
 
             ROA_ID.append(i_ROA + 1)
-            start_index.append(lpoint)
-            end_index.append(rpoint)
+            start_frame.append(lpoint)
+            start_time.append(lpoint/frame_rate)
+            end_frame.append(rpoint)
+            end_time.append(rpoint/frame_rate)
 
             event_trace = dff_traces[i_ROA,lpoint:rpoint+1] # subset out only the signal/event
 
@@ -364,8 +368,8 @@ def analyze_signal(dff_traces, signal_frames, signal_boundaries, frame_rate, dru
             signal_to_noise.append(max(event_trace)/noise[i_ROA]) # signal to noise ratio
 
             max_index = np.array([np.argmax(event_trace)]) # max dff index/frame number within the signal/event range
-            peak_index.append(lpoint + max_index[0]) # max dff index (frame number) within the whole trace 
-            peak_time.append(peak_index[-1]/frame_rate) # peak time in seconds
+            peak_frame.append(lpoint + max_index[0]) # max dff index (frame number) within the whole trace 
+            peak_time.append(peak_frame[-1]/frame_rate) # peak time in seconds
 
             half = scipy.signal.peak_widths(event_trace, max_index, rel_height=0.5)
             prct_10 = scipy.signal.peak_widths(event_trace, max_index, rel_height=0.1)
@@ -379,13 +383,15 @@ def analyze_signal(dff_traces, signal_frames, signal_boundaries, frame_rate, dru
             if j_signal == 0:
                 inter_event_interval.append(None) # initialize inter-event interval for thr first signal as None
             else:
-                inter_event_interval.append((lpoint - end_index[-2])/frame_rate) # calculate inter-event interval from the last event
+                inter_event_interval.append((lpoint - end_frame[-2])/frame_rate) # calculate inter-event interval from the last event
         
     
     signal_stats = pd.DataFrame({'ROA_ID': ROA_ID, 
-                                 'signal_start_index': start_index, 
-                                 'signal_end_index': end_index, 
-                                 'peak_index': peak_index, 
+                                 'signal_start_frame': start_frame, 
+                                 'signal_start_time': start_time,
+                                 'signal_end_frame': end_frame, 
+                                 'signal_end_time': end_time,
+                                 'peak_frame': peak_frame, 
                                  'peak_time': peak_time, 
                                  'AUC': AUC, 
                                  'amplitude': amplitude, 
@@ -396,12 +402,11 @@ def analyze_signal(dff_traces, signal_frames, signal_boundaries, frame_rate, dru
                                  'duration': duration,
                                  'inter_event_interval': inter_event_interval})
     
-    # add column to indicate if the signal starts before drug application (True) or after (False)
+    # add column to indicate if the signal peaks before drug application (True) or after (False)
     if drug_frame == 0:
         signal_stats['Drug'] = 'NA'
     else:
-        signal_stats['Drug'] = np.where(signal_stats['signal_start_index'] < drug_frame, 'Before', 'After')
-        
+        signal_stats['Drug'] = np.where(signal_stats['peak_frame'] < drug_frame, 'Before', 'After')
                                  
     return signal_stats
 
@@ -428,7 +433,7 @@ def align_ROA_cell(ROA_map_labeled, cell_map_labeled, ROA_map_count):
     print("ROA and cell alignment completed.")
     return df_ROA_cell
 
-def ROA_analysis(signal_stats, df_ROA_cell):
+def ROA_analysis(signal_stats, df_ROA_cell, frame_count, frame_rate, drug_frame):
     '''analyze the signals based on the ROA and return a dataframe with ROA stats (columns) for each individual ROA (rows)'''
 
     # calculate the signal stats based on ROA
@@ -440,6 +445,7 @@ def ROA_analysis(signal_stats, df_ROA_cell):
     # identify ROA type based on activity before and after drug application
     ROA = df_ROA_cell.ROA_ID
     ROA_type = []
+
     for i_ROA in ROA:
         df = ROA_based[ROA_based.ROA_ID == i_ROA]
         
@@ -457,7 +463,18 @@ def ROA_analysis(signal_stats, df_ROA_cell):
     df_ROA_cell['ROA_type'] = ROA_type
     ROA_based = pd.merge(df_ROA_cell, ROA_based, on = ['ROA_ID', 'cell_ID'], how = 'left')
 
-    cols = ['ROA_ID','cell_ID','ROA_type','AUC','amplitude','signal_to_noise','rise_time','decay_time','half_width','duration','inter_event_interval', 'signal_count']
+    # calculate recording total, baseline and drug length (in minutes) for frequency calculation
+    total_length_min = frame_count/(frame_rate*60)
+    baseline_length_min = drug_frame/(frame_rate*60)
+    drug_length_min = total_length_min - baseline_length_min
+
+    ROA_based['RecLength'] = np.nan
+    ROA_based['RecLength'] = np.where(ROA_based['Drug'] == 'NA', total_length_min, ROA_based['RecLength'])
+    ROA_based['RecLength'] = np.where(ROA_based['Drug'] == 'Before', baseline_length_min, ROA_based['RecLength'])
+    ROA_based['RecLength'] = np.where(ROA_based['Drug'] == 'After', drug_length_min, ROA_based['RecLength'])
+    ROA_based['frequency_permin'] = ROA_based['signal_count']/ROA_based['RecLength']   
+
+    cols = ['ROA_ID','cell_ID','ROA_type','Drug','AUC','amplitude','signal_to_noise','rise_time','decay_time','half_width','duration','inter_event_interval', 'signal_count', 'frequency_permin']
     return ROA_based[cols], df_ROA_cell
 
 def inspect_trace(ROA_ID, dff_traces, baselines, thresholds, drug_frame):
