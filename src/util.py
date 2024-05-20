@@ -69,7 +69,6 @@ def raw_to_filtered(csv_path, order = 4, cutoff = 0.4):
     read in and convert raw traces to filtered traces
     '''
     
-    global ROA_count, frame_count
     # read in the csv data file in as a dataframe and transpose
     # the csv file has no header and first column is the number of ROA
     # in the original data frame, each row represents a frame and each column represents a ROA
@@ -85,7 +84,7 @@ def raw_to_filtered(csv_path, order = 4, cutoff = 0.4):
     b, a = scipy.signal.butter(order, cutoff, 'low', analog=False)
     filtered_traces = scipy.signal.filtfilt(b, a, raw_traces)
 
-    return filtered_traces
+    return raw_traces, filtered_traces
 
 def check_traces(traces):
     ''' 
@@ -195,7 +194,7 @@ def find2points(x, array):
             break
     return (lpoint, rpoint)
 
-def find_signal_boundary(trace, signal_threshold, baseline_threshold):
+def find_signal_boundary(trace, signal_threshold, baseline_threshold, include_end_incomplete = False):
     ''' 
     takes a 1D trace, signal_threshold, and baseline_threshold (to call beginning and end of an event)
     return tuples of event start and end points (frames) 
@@ -206,11 +205,14 @@ def find_signal_boundary(trace, signal_threshold, baseline_threshold):
 
     signal_list = [] # stores the start and end points of each signal event
     for i in signal_intercept:
-        if i > baseline_intercept[0] and i < baseline_intercept[-1]:
+        if i > baseline_intercept[0] and i < baseline_intercept[-1]: 
             (lpoint, rpoint) = find2points(i,baseline_intercept)
-        
-        if (lpoint, rpoint) not in signal_list:
-            signal_list.append((lpoint, rpoint))
+            if (lpoint, rpoint) not in signal_list:
+                signal_list.append((lpoint, rpoint))
+        elif include_end_incomplete == True and i > baseline_intercept[-1]: # incomplete signal at the end of the trace
+            (lpoint, rpoint) = (baseline_intercept[-1], len(trace)) 
+            if (lpoint, rpoint) not in signal_list:
+                signal_list.append((lpoint, rpoint))
 
     # find frame numbers for start and end of signals
     signal_boundary = [(math.floor(lpoint),math.ceil(rpoint)) for (lpoint,rpoint) in signal_list] 
@@ -238,7 +240,7 @@ def calc_dff(traces, signal_frames = None, baseline_start = 0, baseline_end = -1
     if signal_frames is None: 
         signal_frames = np.zeros(traces.shape) # if signal_frames are not provided, assume no frame is signal
     traces_nosignal = np.multiply(traces, signal_frames == False) # set signal frames to 0
-    traces_nosignal[traces_nosignal == 0] = np.nan # change 0 to nan to remove signal frames in calculation    
+    traces_nosignal[traces_nosignal == 0] = np.nan # change 0 to nan to remove signal frames in calculation
     
     # calculate the baseline averages from signal-removed traces (ignoring nan) and generate dF/F traces
     baselines = np.nanmean(traces_nosignal[:,baseline_start:baseline_end], axis = 1) 
@@ -249,7 +251,39 @@ def calc_dff(traces, signal_frames = None, baseline_start = 0, baseline_end = -1
 
     return dff_traces, dff_traces_nosignal
 
-def find_signal_frames(filtered_traces, signal_frames = None, signal_threshold = 3, baseline_start = 0, baseline_end = -1):
+
+    ''' 
+    generates df/f traces based on signal frames 
+    designed to work with filtered/smoothed traces but can also work on raw traces
+    returns two two-dimensional arrays: dff_traces and dff_traces_nosignal
+
+    Args:
+    traces: a two-dimensional array of traces, each row represents a ROA and each column represents a frame
+    signal_frames: a two-dimensional boolean array corresponding to each ROA and each frame, true if frame is considered as signal
+    baseline_start: optional, the starting frame for baseline calculation, default 0
+    baseline_end: optional, the ending frame for baseline calculation, default -1 (end of the trace)
+
+    Returns:
+    dff_traces: a two-dimensional array of delta F/F trace based on the provided thresholds
+    dff_traces_nosignal: a two-dimensional array of delta F/F trace based on the provided thresholds but free of signal frames (signal frames are set as NaN)
+    '''
+
+    # generate a two-dimensional array from traces but free of signal frames
+    if signal_frames is None: 
+        signal_frames = np.zeros(traces.shape) # if signal_frames are not provided, assume no frame is signal
+    traces_nosignal = np.multiply(traces, signal_frames == False) # set signal frames to 0
+    traces_nosignal[traces_nosignal == 0] = np.nan # change 0 to nan to remove signal frames in calculation
+    
+    # calculate the baseline averages from signal-removed traces (ignoring nan) and generate dF/F traces
+    baselines = np.nanmean(traces_nosignal[:,baseline_start:baseline_end], axis = 1) 
+    dff_traces = (traces - baselines[:,None])/baselines[:,None] 
+
+    dff_traces_nosignal = np.multiply(dff_traces, signal_frames == False) # set signal frames to 0
+    dff_traces_nosignal[dff_traces_nosignal == 0] = np.nan # change 0 to nan to remove signal frames in calculation
+
+    return dff_traces, dff_traces_nosignal
+
+def find_signal_frames(filtered_traces, signal_frames = None, signal_threshold = 3, baseline_start = 0, baseline_end = -1, include_incomplete = False):
    
     '''
     finds signals in the filtered traces using signal_threshold and onset_threshold
@@ -270,8 +304,8 @@ def find_signal_frames(filtered_traces, signal_frames = None, signal_threshold =
     '''
     
     dff_traces, dff_traces_nosignal = calc_dff(filtered_traces, signal_frames, baseline_start, baseline_end) 
-    baselines = np.nanmean(dff_traces_nosignal, axis = 1) # calculate the baseline averages from signal-removed dff traces (ignoring nan)
-    thresholds = signal_threshold * np.nanstd(dff_traces_nosignal, axis = 1) # calculate the baseline standard deviations from signal-removed dff traces (ignoring nan)
+    baselines = np.nanmean(dff_traces_nosignal[:,baseline_start:baseline_end], axis = 1) # calculate the baseline averages from signal-removed dff traces (ignoring nan)
+    thresholds = signal_threshold * np.nanstd(dff_traces_nosignal[:,baseline_start:baseline_end], axis = 1) # calculate the baseline standard deviations from signal-removed dff traces (ignoring nan)
     
     # initialize a new array to store signal frames
     ROA_count, frame_count = filtered_traces.shape
@@ -280,7 +314,7 @@ def find_signal_frames(filtered_traces, signal_frames = None, signal_threshold =
 
     # iterate through each ROA to find signals
     for i_ROA in range(0, ROA_count):
-        signal_boundary, _ , _ = find_signal_boundary(dff_traces[i_ROA,], thresholds[i_ROA], baselines[i_ROA])
+        signal_boundary, _ , _ = find_signal_boundary(dff_traces[i_ROA,], thresholds[i_ROA], baselines[i_ROA], include_incomplete)
         signal_boundaries.append(signal_boundary)
 
         for j_frame in range(0, frame_count):
@@ -290,7 +324,7 @@ def find_signal_frames(filtered_traces, signal_frames = None, signal_threshold =
                     
     return dff_traces, baselines, thresholds, new_signal_frames.astype(bool), signal_boundaries
 
-def iterative_baseline(traces, signal_frames = None, signal_threshold = 3, baseline_start = 0, baseline_end = -1):
+def iterative_baseline(traces, signal_frames = None, baseline_start = 0, baseline_end = -1, include_incomplete = False):
 
     '''
     determine the bassline iteratively
@@ -300,6 +334,7 @@ def iterative_baseline(traces, signal_frames = None, signal_threshold = 3, basel
     signal_frames: optional, a two-dimensional boolean array corresponding to each ROA and each frame, true if frame is considered as signal
     baseline_start: optional, the starting frame for baseline calculation, default 0 (beginning of the recording)
     baseline_end: optional, the ending frame for baseline calculation, default -1 (end of the recording)
+    include_incomplete: optional, include incomplete signals at the end of the trace, default False
 
     Prompted inputs:
     n_iteration: number of iterations for signal detection
@@ -321,9 +356,9 @@ def iterative_baseline(traces, signal_frames = None, signal_threshold = 3, basel
     for iter in range(n_iteration):
         print(f"Processing round {iter+1} of signal detection...")
         if iter < n_iteration - 1: # only store signal_frames for the initial iterations
-            _ , _, _, signal_frames, _ = find_signal_frames(traces, signal_frames_previous, signal_threshold, baseline_start, baseline_end)
+            _ , _, _, signal_frames, _ = find_signal_frames(traces, signal_frames_previous, signal_threshold, baseline_start, baseline_end, include_incomplete)
         else:
-            dff_traces, baselines, thresholds, signal_frames, signal_boundaries = find_signal_frames(traces, signal_frames_previous, signal_threshold, baseline_start, baseline_end)
+            dff_traces, baselines, thresholds, signal_frames, signal_boundaries = find_signal_frames(traces, signal_frames_previous, signal_threshold, baseline_start, baseline_end, include_incomplete)
         
         check_ROA(signal_frames) # check current signal detection results
         signal_frames_previous = signal_frames
@@ -343,7 +378,7 @@ def analyze_signal(dff_traces, signal_frames, signal_boundaries, frame_rate, dru
     '''analyze the signals and return a dataframe with signal stats (columns) for each individual signal/event (rows)'''
     
 
-    ROA_count = dff_traces.shape[0] # number of ROAs
+    (ROA_count, frame_count) = dff_traces.shape 
     noise = np.multiply(dff_traces, signal_frames == False).max(axis = 1) # extract baseline noise (max amplitude within baseline) for each ROA
 
     # initialize lists to store signal stats
@@ -369,31 +404,57 @@ def analyze_signal(dff_traces, signal_frames, signal_boundaries, frame_rate, dru
         for j_signal in range(0,len(signal_boundaries[i_ROA])):
 
             (lpoint, rpoint) = signal_boundaries[i_ROA][j_signal]
-
             ROA_ID.append(i_ROA + 1)
-            start_frame.append(lpoint + 1)
-            start_time.append(lpoint/frame_rate)
-            end_frame.append(rpoint + 1)
-            end_time.append(rpoint/frame_rate)
+            
+            if rpoint + 1 > frame_count: # if the current signal is an incomplete signal at the end of the trace
+                
+                start_frame.append(lpoint + 1)
+                start_time.append(lpoint/frame_rate)
+                end_frame.append(np.nan)
+                end_time.append(np.nan)
+                event_trace = dff_traces[i_ROA,lpoint:rpoint+1]
 
-            event_trace = dff_traces[i_ROA,lpoint:rpoint+1] # subset out only the signal/event
+                AUC.append(np.nan) # AUC not calculatable
+                amplitude.append(max(event_trace))  # signal amplitude
+                signal_to_noise.append(max(event_trace)/noise[i_ROA]) # signal to noise ratio
 
-            AUC.append(scipy.integrate.simpson(event_trace, dx = 1/frame_rate)) # area under the curve using Simpson's rule
-            amplitude.append(max(event_trace))  # signal amplitude
-            signal_to_noise.append(max(event_trace)/noise[i_ROA]) # signal to noise ratio
+                max_index = np.array([np.argmax(event_trace)]) # max dff index/frame number within the signal/event range
+                peak_frame.append(lpoint + max_index[0]) # max dff index (frame number) within the whole trace 
+                peak_time.append(peak_frame[-1]/frame_rate) # peak time in seconds
 
-            max_index = np.array([np.argmax(event_trace)]) # max dff index/frame number within the signal/event range
-            peak_frame.append(lpoint + max_index[0]) # max dff index (frame number) within the whole trace 
-            peak_time.append(peak_frame[-1]/frame_rate) # peak time in seconds
+                half = scipy.signal.peak_widths(event_trace, max_index, rel_height=0.5)
+                prct_10 = scipy.signal.peak_widths(event_trace, max_index, rel_height=0.1)
+                prct_90 = scipy.signal.peak_widths(event_trace, max_index, rel_height=0.9)
 
-            half = scipy.signal.peak_widths(event_trace, max_index, rel_height=0.5)
-            prct_10 = scipy.signal.peak_widths(event_trace, max_index, rel_height=0.1)
-            prct_90 = scipy.signal.peak_widths(event_trace, max_index, rel_height=0.9)
+                rise_time.append((prct_10[2][0] - prct_90[2][0])/frame_rate) # rise time in seconds
+                decay_time.append(np.nan) # decay time in seconds
+                half_width.append(np.nan) # full width at half maximum in seconds
+                duration.append(np.nan) # duration of the signal/event in seconds
+            
+            else:
+                start_frame.append(lpoint + 1)
+                start_time.append(lpoint/frame_rate)
+                end_frame.append(rpoint + 1)
+                end_time.append(rpoint/frame_rate)
 
-            rise_time.append((prct_10[2][0] - prct_90[2][0])/frame_rate) # rise time in seconds
-            decay_time.append((prct_90[3][0] - prct_10[3][0])/frame_rate) # decay time in seconds
-            half_width.append(half[1][0]/frame_rate) # full width at half maximum in seconds
-            duration.append((rpoint - lpoint)/frame_rate) # duration of the signal/event in seconds
+                event_trace = dff_traces[i_ROA,lpoint:rpoint+1] # subset out only the signal/event
+
+                AUC.append(scipy.integrate.simpson(event_trace, dx = 1/frame_rate)) # area under the curve using Simpson's rule
+                amplitude.append(max(event_trace))  # signal amplitude
+                signal_to_noise.append(max(event_trace)/noise[i_ROA]) # signal to noise ratio
+
+                max_index = np.array([np.argmax(event_trace)]) # max dff index/frame number within the signal/event range
+                peak_frame.append(lpoint + max_index[0]) # max dff index (frame number) within the whole trace 
+                peak_time.append(peak_frame[-1]/frame_rate) # peak time in seconds
+
+                half = scipy.signal.peak_widths(event_trace, max_index, rel_height=0.5)
+                prct_10 = scipy.signal.peak_widths(event_trace, max_index, rel_height=0.1)
+                prct_90 = scipy.signal.peak_widths(event_trace, max_index, rel_height=0.9)
+
+                rise_time.append((prct_10[2][0] - prct_90[2][0])/frame_rate) # rise time in seconds
+                decay_time.append((prct_90[3][0] - prct_10[3][0])/frame_rate) # decay time in seconds
+                half_width.append(half[1][0]/frame_rate) # full width at half maximum in seconds
+                duration.append((rpoint - lpoint)/frame_rate) # duration of the signal/event in seconds
 
             if j_signal == 0:
                 inter_event_interval.append(None) # initialize inter-event interval for thr first signal as None
