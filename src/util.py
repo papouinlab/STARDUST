@@ -520,7 +520,9 @@ def align_ROA_cell(ROA_map_labeled, cell_map_labeled, ROA_map_count, spatial_res
                 ROA_not_assigned.append(i_ROA)
         ROA_cell.append(most_frequent) # assign the most common cell ID for the ROA as its cell registration
 
-    df_ROA_cell = pd.DataFrame({'ROA_ID': ROA, 'cell_ID': ROA_cell, 'size_um2': size_pixel * spatial_resolution**2})
+    df_ROA_cell = pd.DataFrame({'ROA_ID': ROA, 'cell_ID': ROA_cell, 'size_pixel' : size_pixel})
+    df_ROA_cell['size_um2'] = df_ROA_cell['size_pixel'] * spatial_resolution**2
+
     if len(ROA_not_assigned) != 0:
         print(f"There are {len(ROA_not_assigned)} ({round(len(ROA_not_assigned)/ROA_map_count * 100,2)}%) ROAs not assigned to any cell.")
         print("ROA IDs:", ROA_not_assigned)
@@ -575,6 +577,21 @@ def ROA_analysis(signal_stats, df_ROA_cell, frame_count, frame_rate, drug_frame)
     cols = ['ROA_ID','cell_ID','ROA_type','epoch','AUC','amplitude','signal_to_noise','rise_time','decay_time','half_width','duration','inter_event_interval', 'signal_count', 'frequency_permin']
     return ROA_based[cols], df_ROA_cell
 
+def cell_analysis(signal_stats, df_ROA_cell):
+    '''
+    Analyze the signal stats at the cell level.
+    '''
+    cell_based_ROA_count = df_ROA_cell.groupby(['cell_ID'], as_index = False).count()
+    cell_based_ROA_count = cell_based_ROA_count[['cell_ID', 'ROA_ID']]
+    cell_based_ROA_count.columns = ['cell_ID', 'ROA_count']
+    cell_based_signal_count = signal_stats.groupby(['cell_ID', 'epoch'], as_index = False).count()
+    cell_based = signal_stats.groupby(['cell_ID', 'epoch'], as_index = False).mean()
+    cell_based['signal_count'] = cell_based_signal_count['ROA_ID']
+
+    cols = ['cell_ID', 'epoch', 'signal_count', 'AUC', 'amplitude', 'signal_to_noise', 'rise_time', 'decay_time', 'half_width', 'duration']
+    cell_based = pd.merge(cell_based_ROA_count, cell_based[cols], on = 'cell_ID', how = 'right')
+    return cell_based
+
 def inspect_trace(ROA_IDs, dff_traces, baselines, thresholds, drug_frame):
     
     ''' 
@@ -620,7 +637,7 @@ def output_data(save_as = 'csv'):
     '''
     Save the output dataframes to csv or excel.
     '''
-    global output_path, metadata, dff_traces, signal_stats, ROA_based, df_ROA_cell
+    global output_path, metadata, dff_traces, signal_stats, ROA_based, df_ROA_cell, cell_based
     
     if save_as.lower() == 'csv':
         print("Saving outputs as csv files...")
@@ -629,6 +646,7 @@ def output_data(save_as = 'csv'):
         signal_stats.to_csv(output_path + '_signal_stats.csv', index = False)
         ROA_based.to_csv(output_path + '_ROA_based.csv', index = False)
         df_ROA_cell.to_csv(output_path + '_ROA_cell.csv', index = False)
+        cell_based.to_csv(output_path + '_cell_based.csv', index = False)
     elif save_as.lower() == 'excel':
         print("Saving outputs as an excel file...")
         with pd.ExcelWriter(output_path + '.xlsx') as writer:
@@ -636,6 +654,7 @@ def output_data(save_as = 'csv'):
             signal_stats.to_excel(writer, sheet_name ='signal stats')
             ROA_based.to_excel(writer,sheet_name = 'ROA based')
             df_ROA_cell.to_excel(writer,sheet_name = 'ROA cell alignment')
+            cell_based.to_excel(writer,sheet_name = 'cell based')
     else:
         Warning('Invalid file format. Please choose csv or excel.')
     
