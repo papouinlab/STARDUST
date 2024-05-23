@@ -64,19 +64,26 @@ def read_tif(tif_path, type):
 
     return map_array, map_labeled, map_count
 
-def visualize_map(ROA_map_array, cell_map_array):
+def visualize_map(ROA_map_array = np.empty(0), cell_map_array = np.empty(0)):
 
     '''
-    Visualize the ROA and cell masks from binary numpy array. 
+    Visualizes the ROA and cell masks from binary numpy array. 
     '''
-
-    fig, axs = plt.subplots(1,2, figsize = (10, 10))
-
-    axs[0].imshow(ROA_map_array)
-    axs[0].set_title('ROA mask')
-    axs[1].imshow(cell_map_array)
-    axs[1].set_title('Cell mask')
-    plt.show()
+    if ROA_map_array.any() and cell_map_array.any():
+        fig, axs = plt.subplots(1,2, figsize = (10, 10))
+        axs[0].imshow(ROA_map_array)
+        axs[0].set_title('ROA mask')
+        axs[1].imshow(cell_map_array)
+        axs[1].set_title('Cell mask')
+        plt.show()
+    elif ROA_map_array.any():
+        plt.imshow(ROA_map_array)
+        plt.title('ROA mask')
+        plt.show()
+    elif cell_map_array.any():
+        plt.imshow(cell_map_array)
+        plt.title('Cell mask')
+        plt.show()
 
 def raw_to_filtered(csv_path, order = 4, cutoff = 0.4):
     '''
@@ -574,7 +581,7 @@ def ROA_analysis(signal_stats, df_ROA_cell, frame_count, frame_rate, drug_frame)
     ROA_based['rec_length'] = np.where(ROA_based['epoch'] == 'drug', drug_length_min, ROA_based['rec_length'])
     ROA_based['frequency_permin'] = ROA_based['signal_count']/ROA_based['rec_length']   
 
-    cols = ['ROA_ID','cell_ID','ROA_type','epoch','AUC','amplitude','signal_to_noise','rise_time','decay_time','half_width','duration','inter_event_interval', 'signal_count', 'frequency_permin']
+    cols = ['ROA_ID','cell_ID','ROA_type', 'size_um2','epoch','AUC','amplitude','signal_to_noise','rise_time','decay_time','half_width','duration','inter_event_interval', 'signal_count', 'frequency_permin']
     return ROA_based[cols], df_ROA_cell
 
 def cell_analysis(signal_stats, df_ROA_cell):
