@@ -5,6 +5,8 @@ STARDUST: Spatio-Temporal Analysis of Regional Dynamics &amp; Unbiased Sorting o
 
 STARDUST is a pipeline that captures intracellular calcium (Ca<sup>2+</sup>) dynamics in confined, local micro-domains across the territory of all astrocytes within the field of view. STARDUST is developed and maintained by the [Papouin lab](https://sites.wustl.edu/papouinlab/) at Washington Univeristy in St. Louis. We welcome suggestions and issue reporting via the Issue section on GitHub. 
 
+This repository hosts code for the signal detection part of STARDUST. For a full description of the protocol, please refer to our paper [*STARDUST: a pipeline for the unbiased analysis of astrocyte regional calcium dynamics.*](https://doi.org/10.1101/2024.04.04.588196). 
+
 - [Overview](#overview)
 - [Reference](#reference)
 - [Updates](#updates)
