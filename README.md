@@ -1,5 +1,6 @@
 # STARDUST
 STARDUST: Spatio-Temporal Analysis of Regional Dynamics &amp; Unbiased Sorting of Transients
+[![DOI](https://zenodo.org/badge/781623882.svg)](https://zenodo.org/doi/10.5281/zenodo.11398198)
 
 ![STARDUST workflow](workflow.png)
 
