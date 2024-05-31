@@ -1,7 +1,55 @@
 # util.py
-import os, io, math, scipy, numpy as np, pandas as pd, matplotlib.pyplot as plt, seaborn as sns
+import os, io, warnings, math, scipy, numpy as np, pandas as pd, matplotlib.pyplot as plt, seaborn as sns
 from PIL import Image
  
+def prompt_input():
+    '''
+    Prompt user input for file paths and output file name.
+    '''
+    
+    # input
+    input_dir = input("Enter the input folder path: ")
+    time_series_filename = input("Enter the time series file name: ")
+    ROA_mask_filename = input("Enter the ROA mask file name: ")
+    cell_mask_filename = input("Enter the cell mask file name: ")
+
+    if '.csv' not in time_series_filename:
+        time_series_filename = time_series_filename + '.csv'
+    if '.tif' not in ROA_mask_filename:
+        ROA_mask_filename = ROA_mask_filename + '.tif'
+    if '.tif' not in cell_mask_filename:
+        cell_mask_filename = cell_mask_filename + '.tif'
+        
+    # check if the files are in the input directory
+    input_files = os.listdir(input_dir)
+    if time_series_filename not in input_files:
+        warnings.warn("Time series file not found in the input directory. Please check the file name and input path.")
+    else:
+        time_series_path = os.path.join(input_dir, time_series_filename)
+    if ROA_mask_filename not in input_files:
+        warnings.warn("ROA mask file not found in the input directory. Please check the file name and input path.")
+    else:
+        ROA_mask_path = os.path.join(input_dir, ROA_mask_filename)
+    if cell_mask_filename not in input_files:
+        warnings.warn("Cell mask file not found in the input directory. Please check the file name and input path.")
+    else:
+        cell_mask_path = os.path.join(input_dir, cell_mask_filename)
+    
+    # output
+    output_dir = input('Enter the path to the folder for output files: ')
+    output_filename = input('Enter the output file name: ')
+    output_path = os.path.join(output_dir, output_filename) 
+    
+    return time_series_path, ROA_mask_path, cell_mask_path, output_path
+
+def get_metadata():
+    # input metadata related to the experiment
+    drug_frame = float(input('Enter the frame number of drug application (enter 0 if no drug was applied): '))
+    frame_rate = float(input("Enter the frame rate (in Hz) of the recording (e.g. 1): "))
+    spatial_resolution = float(input('Enter the spatial resolution of the recording (in µm/pixel, if one pixel size is 0.884 x 0.884 µm^2, enter 0.884): '))
+    
+    return drug_frame, frame_rate, spatial_resolution
+
 def find_files(input_dir, keyword):
     '''
     Takes an input directory and find the trace csv file, ROA mask tif, cell mask tif.
@@ -12,23 +60,28 @@ def find_files(input_dir, keyword):
 
     exp_index = [keyword.lower() in f for f in input_files]
     exp_files = np.take(input_files, np.where(exp_index)[0])
-    csv_index = ['signal.csv' in f for f in exp_files]
+    
+    # find the time series raw csv file
+    csv_index = ['.csv' in f for f in exp_files]
+    csv_files = np.take(exp_files, np.where(csv_index)[0])
+    time_series_index = ['raw' in f for f in csv_files]
 
+    # find the ROA and cell mask tif files
     tif_index = ['.tif' in f for f in exp_files]
     tif_files = np.take(exp_files, np.where(tif_index)[0])
     ROA_index = ['roa' in f for f in tif_files]
     cell_index = ['cell' in f for f in tif_files]
     
-    csv_path = os.path.join(input_dir, exp_files[csv_index.index(True)])
+    time_series_path = os.path.join(input_dir, exp_files[time_series_index.index(True)])
     ROA_mask_path = os.path.join(input_dir, tif_files[ROA_index.index(True)])
     cell_mask_path = os.path.join(input_dir, tif_files[cell_index.index(True)])
     
     print("Found the following files: \n")
-    print("CSV file: ", csv_path)
+    print("CSV file: ", time_series_path)
     print("ROA mask: ", ROA_mask_path)
     print("Cell mask: ", cell_mask_path)
 
-    return csv_path, ROA_mask_path, cell_mask_path
+    return time_series_path, ROA_mask_path, cell_mask_path
 
 def read_tif(tif_path, type):
 
@@ -48,7 +101,7 @@ def read_tif(tif_path, type):
     One ROA is defined as a group of connected pixels (including diagonally connected pixels). 
     One cell is defined as a group of connected pixels (NOT including diagonally connected pixels).
     '''
-    print("Reading in file: ", tif_path)
+    print("Reading in file for ", type, "mask: ", tif_path, "\n")
     image = open(tif_path, 'rb').read()
     map_tif = Image.open(io.BytesIO(image))
     map_array = np.asarray(map_tif)
@@ -540,8 +593,7 @@ def align_ROA_cell(ROA_map_labeled, cell_map_labeled, ROA_map_count, spatial_res
 def ROA_analysis(signal_stats, df_ROA_cell, frame_count, frame_rate, drug_frame):
     '''analyze the signals based on the ROA and return a dataframe with ROA stats (columns) for each individual ROA (rows)'''
 
-    # calculate the signal stats based on ROA
-    
+    # calculate the signal features based on ROA
     ROA_based_count = signal_stats.groupby(['ROA_ID', 'epoch'], as_index = False).count()
     ROA_based = signal_stats.groupby(['ROA_ID', 'epoch'], as_index = False).mean()
     ROA_based['signal_count'] = ROA_based_count['AUC']
@@ -565,7 +617,8 @@ def ROA_analysis(signal_stats, df_ROA_cell, frame_count, frame_rate, drug_frame)
             ROA_type.append('inactive')
 
     df_ROA_cell['ROA_type'] = ROA_type
-    ROA_based = pd.merge(df_ROA_cell, ROA_based, on = ['ROA_ID', 'cell_ID'], how = 'left')
+    ROA_based = pd.merge(df_ROA_cell[['ROA_ID', 'cell_ID', 'ROA_type']], ROA_based, 
+                         on = ['ROA_ID', 'cell_ID'], how = 'left')
 
     ROA_based['signal_count'] = np.where(ROA_based['ROA_type'] == 'inactive', 0, ROA_based['signal_count'])
 
@@ -581,8 +634,17 @@ def ROA_analysis(signal_stats, df_ROA_cell, frame_count, frame_rate, drug_frame)
     ROA_based['rec_length'] = np.where(ROA_based['epoch'] == 'drug', drug_length_min, ROA_based['rec_length'])
     ROA_based['frequency_permin'] = ROA_based['signal_count']/ROA_based['rec_length']   
 
-    cols = ['ROA_ID','cell_ID','ROA_type', 'size_um2','epoch','AUC','amplitude','signal_to_noise','rise_time','decay_time','half_width','duration','inter_event_interval', 'signal_count', 'frequency_permin']
+    cols = ['ROA_ID','cell_ID','ROA_type','size_um2','epoch','AUC','amplitude','signal_to_noise','rise_time','decay_time','half_width','duration','inter_event_interval', 'signal_count', 'frequency_permin']
     return ROA_based[cols], df_ROA_cell
+
+def ROA_type_summary(df_ROA_cell):
+    ROA_summary = df_ROA_cell.groupby('ROA_type').count()
+    ROA_summary.rename(columns = {'ROA_ID':'count'}, inplace = True)
+    ROA_summary = ROA_summary.drop(columns=['cell_ID', 'size_pixel', 'size_um2'])
+    
+    ROA_summary['percentage'] = ROA_summary['count']/ROA_summary['count'].sum() * 100
+    
+    return ROA_summary
 
 def cell_analysis(signal_stats, df_ROA_cell):
     '''
@@ -632,8 +694,8 @@ def metadata_todf():
     '''
     Generate a metadata dataframe for the recording.
     '''
-    global csv_path, frame_rate, spatial_resolution, drug_frame, signal_threshold
-    metadata = pd.DataFrame({'signal_file': [csv_path], 
+    global time_series_path, frame_rate, spatial_resolution, drug_frame, signal_threshold
+    metadata = pd.DataFrame({'signal_file': [time_series_path], 
                              'frame_rate': [frame_rate], 'spatial_resolution': [spatial_resolution],
                              'drug_frame': [drug_frame], 'drug_time': [drug_frame/frame_rate], 
                              'signal_threshold': [signal_threshold]})
@@ -644,24 +706,26 @@ def output_data(save_as = 'csv'):
     '''
     Save the output dataframes to csv or excel.
     '''
-    global output_path, metadata, dff_traces, signal_stats, ROA_based, df_ROA_cell, cell_based
+    global output_path, metadata, dff_traces, signal_features, ROA_based, df_ROA_cell, ROA_summary, cell_based
     
     if save_as.lower() == 'csv':
         print("Saving outputs as csv files...")
         metadata.to_csv(output_path + '_metadata.csv', index = False)
         np.savetxt(output_path +'_dff_traces.csv', dff_traces, delimiter=",")
-        signal_stats.to_csv(output_path + '_signal_stats.csv', index = False)
+        signal_features.to_csv(output_path + '_signal_features.csv', index = False)
         ROA_based.to_csv(output_path + '_ROA_based.csv', index = False)
-        df_ROA_cell.to_csv(output_path + '_ROA_cell.csv', index = False)
+        df_ROA_cell.to_csv(output_path + '_ROA_cell_key.csv', index = False)
+        ROA_summary.to_csv(output_path + '_ROA_type_summary.csv', index = False)
         cell_based.to_csv(output_path + '_cell_based.csv', index = False)
     elif save_as.lower() == 'excel':
         print("Saving outputs as an excel file...")
         with pd.ExcelWriter(output_path + '.xlsx') as writer:
             metadata.to_excel(writer, sheet_name = 'metadata')
-            signal_stats.to_excel(writer, sheet_name ='signal stats')
-            ROA_based.to_excel(writer,sheet_name = 'ROA based')
-            df_ROA_cell.to_excel(writer,sheet_name = 'ROA cell alignment')
-            cell_based.to_excel(writer,sheet_name = 'cell based')
+            signal_features.to_excel(writer, sheet_name ='signal features')
+            ROA_based.to_excel(writer, sheet_name = 'ROA based')
+            df_ROA_cell.to_excel(writer, sheet_name = 'ROA cell key')
+            ROA_summary.to_excel(writer, sheet_name = 'ROA type summary')
+            cell_based.to_excel(writer, sheet_name = 'cell based')
     else:
         Warning('Invalid file format. Please choose csv or excel.')
     
