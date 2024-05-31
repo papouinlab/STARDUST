@@ -709,36 +709,31 @@ def metadata_todf():
     '''
     Generate a metadata dataframe for the recording.
     '''
-    global time_series_path, frame_rate, spatial_resolution, drug_frame, signal_threshold
-    metadata = pd.DataFrame({'signal_file': [time_series_path], 
-                             'frame_rate': [frame_rate], 'spatial_resolution': [spatial_resolution],
+    global frame_rate, spatial_resolution, drug_frame, signal_threshold
+    metadata = pd.DataFrame({'frame_rate': [frame_rate], 'spatial_resolution': [spatial_resolution],
                              'drug_frame': [drug_frame], 'drug_time': [drug_frame/frame_rate], 
                              'signal_threshold': [signal_threshold]})
     return metadata
 
-def output_data(save_as = 'csv'):
+def output_data(output_path, metadata, dff_traces, signal_features, 
+                save_as = 'csv', ROA_based = None, df_ROA_cell = None, ROA_summary = None, cell_based = None):
 
     '''
     Save the output dataframes to csv or excel.
     '''
-    global output_path, metadata, dff_traces, signal_features
     
     if save_as.lower() == 'csv':
         print("Saving outputs as csv files...")
         metadata.to_csv(output_path + '_metadata.csv', index = False)
         np.savetxt(output_path +'_dff_traces.csv', dff_traces, delimiter=",")
         signal_features.to_csv(output_path + '_signal_features.csv', index = False)
-        if 'ROA_based' in globals():
-            global ROA_based
+        if ROA_based is not None:
             ROA_based.to_csv(output_path + '_ROA_based.csv', index = False)
-        if 'df_ROA_cell' in globals():
-            global df_ROA_cell
+        if df_ROA_cell is not None:
             df_ROA_cell.to_csv(output_path + '_ROA_cell_key.csv', index = False)
-        if 'ROA_summary' in globals():
-            global ROA_summary
+        if ROA_summary is not None:
             ROA_summary.to_csv(output_path + '_ROA_type_summary.csv', index = False)
-        if 'cell_based' in globals():
-            global cell_based
+        if cell_based is not None:
             cell_based.to_csv(output_path + '_cell_based.csv', index = False)
     
     elif save_as.lower() == 'excel':
@@ -746,17 +741,13 @@ def output_data(save_as = 'csv'):
         with pd.ExcelWriter(output_path + '.xlsx') as writer:
             metadata.to_excel(writer, sheet_name = 'metadata')
             signal_features.to_excel(writer, sheet_name ='signal features')
-            if 'ROA_based' in globals():
-                global ROA_based
+            if ROA_based is not None:
                 ROA_based.to_excel(writer, sheet_name = 'ROA based')
-            if df_ROA_cell in globals():
-                global df_ROA_cell
+            if df_ROA_cell is not None:
                 df_ROA_cell.to_excel(writer, sheet_name = 'ROA cell key')
-            if 'ROA_summary' in globals():
-                global ROA_summary
+            if ROA_summary is not None:
                 ROA_summary.to_excel(writer, sheet_name = 'ROA type summary')
-            if 'cell_based' in globals():
-                global cell_based
+            if cell_based is not None:
                 cell_based.to_excel(writer, sheet_name = 'cell based')
     else:
         Warning('Invalid file format. Please choose csv or excel.')
