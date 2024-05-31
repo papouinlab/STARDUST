@@ -2,38 +2,53 @@
 import os, io, warnings, math, scipy, numpy as np, pandas as pd, matplotlib.pyplot as plt, seaborn as sns
 from PIL import Image
  
-def prompt_input():
+def prompt_input(analysis_type = "ROA"):
     '''
     Prompt user input for file paths and output file name.
     '''
-    
     # input
-    input_dir = input("Enter the input folder path: ")
-    time_series_filename = input("Enter the time series file name: ")
-    ROA_mask_filename = input("Enter the ROA mask file name: ")
-    cell_mask_filename = input("Enter the cell mask file name: ")
+    if analysis_type == "ROA":
+        input_dir = input("Enter the input folder path: ")
+        time_series_filename = input("Enter the time series file name: ")
+        ROA_mask_filename = input("Enter the ROA mask file name: ")
+        cell_mask_filename = input("Enter the cell mask file name: ")
+        
+        if '.tif' not in ROA_mask_filename:
+            ROA_mask_filename = ROA_mask_filename + '.tif'
+        if '.tif' not in cell_mask_filename:
+            cell_mask_filename = cell_mask_filename + '.tif'
+            
+    elif analysis_type == "cell":
+        input_dir = input("Enter the input folder path: ")
+        time_series_filename = input("Enter the time series file name: ")
 
     if '.csv' not in time_series_filename:
         time_series_filename = time_series_filename + '.csv'
-    if '.tif' not in ROA_mask_filename:
-        ROA_mask_filename = ROA_mask_filename + '.tif'
-    if '.tif' not in cell_mask_filename:
-        cell_mask_filename = cell_mask_filename + '.tif'
+    
         
     # check if the files are in the input directory
     input_files = os.listdir(input_dir)
-    if time_series_filename not in input_files:
-        warnings.warn("Time series file not found in the input directory. Please check the file name and input path.")
-    else:
-        time_series_path = os.path.join(input_dir, time_series_filename)
-    if ROA_mask_filename not in input_files:
-        warnings.warn("ROA mask file not found in the input directory. Please check the file name and input path.")
-    else:
-        ROA_mask_path = os.path.join(input_dir, ROA_mask_filename)
-    if cell_mask_filename not in input_files:
-        warnings.warn("Cell mask file not found in the input directory. Please check the file name and input path.")
-    else:
-        cell_mask_path = os.path.join(input_dir, cell_mask_filename)
+    if analysis_type == "cell":
+        if time_series_filename not in input_files:
+            warnings.warn("Time series file not found in the input directory. Please check the file name and input path.")
+        else:
+            time_series_path = os.path.join(input_dir, time_series_filename)
+        ROA_mask_path = None # placeholder
+        cell_mask_path = None # placeholder
+        
+    if analysis_type == "ROA":
+        if time_series_filename not in input_files:
+            warnings.warn("Time series file not found in the input directory. Please check the file name and input path.")
+        else:
+            time_series_path = os.path.join(input_dir, time_series_filename)
+        if ROA_mask_filename not in input_files:
+            warnings.warn("ROA mask file not found in the input directory. Please check the file name and input path.")
+        else:
+            ROA_mask_path = os.path.join(input_dir, ROA_mask_filename)
+        if cell_mask_filename not in input_files:
+            warnings.warn("Cell mask file not found in the input directory. Please check the file name and input path.")
+        else:
+            cell_mask_path = os.path.join(input_dir, cell_mask_filename)
     
     # output
     output_dir = input('Enter the path to the folder for output files: ')
@@ -706,26 +721,43 @@ def output_data(save_as = 'csv'):
     '''
     Save the output dataframes to csv or excel.
     '''
-    global output_path, metadata, dff_traces, signal_features, ROA_based, df_ROA_cell, ROA_summary, cell_based
+    global output_path, metadata, dff_traces, signal_features
     
     if save_as.lower() == 'csv':
         print("Saving outputs as csv files...")
         metadata.to_csv(output_path + '_metadata.csv', index = False)
         np.savetxt(output_path +'_dff_traces.csv', dff_traces, delimiter=",")
         signal_features.to_csv(output_path + '_signal_features.csv', index = False)
-        ROA_based.to_csv(output_path + '_ROA_based.csv', index = False)
-        df_ROA_cell.to_csv(output_path + '_ROA_cell_key.csv', index = False)
-        ROA_summary.to_csv(output_path + '_ROA_type_summary.csv', index = False)
-        cell_based.to_csv(output_path + '_cell_based.csv', index = False)
+        if 'ROA_based' in globals():
+            global ROA_based
+            ROA_based.to_csv(output_path + '_ROA_based.csv', index = False)
+        if 'df_ROA_cell' in globals():
+            global df_ROA_cell
+            df_ROA_cell.to_csv(output_path + '_ROA_cell_key.csv', index = False)
+        if 'ROA_summary' in globals():
+            global ROA_summary
+            ROA_summary.to_csv(output_path + '_ROA_type_summary.csv', index = False)
+        if 'cell_based' in globals():
+            global cell_based
+            cell_based.to_csv(output_path + '_cell_based.csv', index = False)
+    
     elif save_as.lower() == 'excel':
         print("Saving outputs as an excel file...")
         with pd.ExcelWriter(output_path + '.xlsx') as writer:
             metadata.to_excel(writer, sheet_name = 'metadata')
             signal_features.to_excel(writer, sheet_name ='signal features')
-            ROA_based.to_excel(writer, sheet_name = 'ROA based')
-            df_ROA_cell.to_excel(writer, sheet_name = 'ROA cell key')
-            ROA_summary.to_excel(writer, sheet_name = 'ROA type summary')
-            cell_based.to_excel(writer, sheet_name = 'cell based')
+            if 'ROA_based' in globals():
+                global ROA_based
+                ROA_based.to_excel(writer, sheet_name = 'ROA based')
+            if df_ROA_cell in globals():
+                global df_ROA_cell
+                df_ROA_cell.to_excel(writer, sheet_name = 'ROA cell key')
+            if 'ROA_summary' in globals():
+                global ROA_summary
+                ROA_summary.to_excel(writer, sheet_name = 'ROA type summary')
+            if 'cell_based' in globals():
+                global cell_based
+                cell_based.to_excel(writer, sheet_name = 'cell based')
     else:
         Warning('Invalid file format. Please choose csv or excel.')
     
