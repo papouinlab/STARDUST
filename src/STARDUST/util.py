@@ -87,7 +87,7 @@ def find_files(input_dir, keyword):
     ROA_index = ['roa' in f for f in tif_files]
     cell_index = ['cell' in f for f in tif_files]
     
-    time_series_path = os.path.join(input_dir, exp_files[time_series_index.index(True)])
+    time_series_path = os.path.join(input_dir, csv_files[time_series_index.index(True)])
     ROA_mask_path = os.path.join(input_dir, tif_files[ROA_index.index(True)])
     cell_mask_path = os.path.join(input_dir, tif_files[cell_index.index(True)])
     
