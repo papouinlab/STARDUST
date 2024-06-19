@@ -2,6 +2,15 @@
 import os, io, warnings, math, scipy, numpy as np, pandas as pd, matplotlib.pyplot as plt, seaborn as sns
 from PIL import Image
  
+def check_path(dir):
+    if "/" in dir: # mac
+        if dir[-1] != "/":
+            dir = dir + "/"
+    elif '\\' in dir: # win
+        if dir[-1] != "\\":
+            dir = dir + "\\"
+    return dir
+ 
 def prompt_input(analysis_type = "ROA"):
     '''
     Prompt user input for file paths and output file name.
@@ -12,6 +21,8 @@ def prompt_input(analysis_type = "ROA"):
         time_series_filename = input("Enter the time series file name: ")
         ROA_mask_filename = input("Enter the ROA mask file name: ")
         cell_mask_filename = input("Enter the cell mask file name: ")
+        
+        input_dir = check_path(input_dir)
         
         if '.tif' not in ROA_mask_filename:
             ROA_mask_filename = ROA_mask_filename + '.tif'
@@ -24,7 +35,6 @@ def prompt_input(analysis_type = "ROA"):
 
     if '.csv' not in time_series_filename:
         time_series_filename = time_series_filename + '.csv'
-    
         
     # check if the files are in the input directory
     input_files = os.listdir(input_dir)
