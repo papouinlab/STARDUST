@@ -11,34 +11,33 @@ def check_path(dir):
             dir = dir + "\\"
     return dir
  
-def prompt_input(analysis_type = "ROA"):
+def prompt_input(analysis_type = "two maps"):
     '''
     Prompt user input for file paths and output file name.
     '''
     # input
-    if analysis_type == "ROA":
+    if analysis_type == "two maps":
         input_dir = input("Enter the input folder path: ")
         time_series_filename = input("Enter the time series file name: ")
         ROA_mask_filename = input("Enter the ROA mask file name: ")
         cell_mask_filename = input("Enter the cell mask file name: ")
-        
-        input_dir = check_path(input_dir)
         
         if '.tif' not in ROA_mask_filename:
             ROA_mask_filename = ROA_mask_filename + '.tif'
         if '.tif' not in cell_mask_filename:
             cell_mask_filename = cell_mask_filename + '.tif'
             
-    elif analysis_type == "cell":
+    elif analysis_type == "single map":
         input_dir = input("Enter the input folder path: ")
         time_series_filename = input("Enter the time series file name: ")
 
+    input_dir = check_path(input_dir) # make sure the path ends with '/'
     if '.csv' not in time_series_filename:
         time_series_filename = time_series_filename + '.csv'
-        
+    
     # check if the files are in the input directory
     input_files = os.listdir(input_dir)
-    if analysis_type == "cell":
+    if analysis_type == "single map":
         if time_series_filename not in input_files:
             warnings.warn("Time series file not found in the input directory. Please check the file name and input path.")
         else:
@@ -46,7 +45,7 @@ def prompt_input(analysis_type = "ROA"):
         ROA_mask_path = None # placeholder
         cell_mask_path = None # placeholder
         
-    if analysis_type == "ROA":
+    if analysis_type == "two maps":
         if time_series_filename not in input_files:
             warnings.warn("Time series file not found in the input directory. Please check the file name and input path.")
         else:
@@ -600,7 +599,7 @@ def align_ROA_cell(ROA_map_labeled, cell_map_labeled, ROA_map_count, spatial_res
         most_frequent = scipy.stats.mode(cell_assigned, keepdims = False).mode # find the most common cell ID inside the ROA
         if most_frequent == 0: # if the most common cell ID is 0, then find the second most common cell ID
             if len(np.unique(cell_assigned[cell_assigned != 0])) != 0:
-                most_frequent = scipy.stats.mode(cell_assigned[cell_assigned != 0], axis = None).mode
+                most_frequent = scipy.stats.mode(cell_assigned[cell_assigned != 0], keepdims = False).mode
             else:
                 ROA_not_assigned.append(i_ROA)
         ROA_cell.append(most_frequent) # assign the most common cell ID for the ROA as its cell registration
