@@ -1,4 +1,5 @@
 # util.py
+import scipy.signal
 import os, io, warnings, math, scipy, numpy as np, pandas as pd, matplotlib.pyplot as plt, seaborn as sns
 from PIL import Image
  
@@ -11,12 +12,12 @@ def check_path(dir):
             dir = dir + "\\"
     return dir
  
-def prompt_input(analysis_type = "two maps"):
+def prompt_input(analysis_type = "full"):
     '''
     Prompt user input for file paths and output file name.
     '''
     # input
-    if analysis_type == "two maps":
+    if analysis_type == "full":
         input_dir = input("Enter the input folder path: ")
         time_series_filename = input("Enter the time series file name: ")
         ROA_mask_filename = input("Enter the ROA mask file name: ")
@@ -25,27 +26,47 @@ def prompt_input(analysis_type = "two maps"):
         if '.tif' not in ROA_mask_filename:
             ROA_mask_filename = ROA_mask_filename + '.tif'
         if '.tif' not in cell_mask_filename:
-            cell_mask_filename = cell_mask_filename + '.tif'
-            
-    elif analysis_type == "single map":
+            cell_mask_filename = cell_mask_filename + '.tif'   
+    else:
         input_dir = input("Enter the input folder path: ")
         time_series_filename = input("Enter the time series file name: ")
-
+        if analysis_type == "ROA-based":
+            ROA_mask_filename = input("Enter the ROA mask file name: ")
+            if '.tif' not in ROA_mask_filename:
+                ROA_mask_filename = ROA_mask_filename + '.tif'
+        elif analysis_type == "cell-based":
+            cell_mask_filename = input("Enter the cell mask file name: ")
+            if '.tif' not in cell_mask_filename:
+                cell_mask_filename = cell_mask_filename + '.tif'
+    
     input_dir = check_path(input_dir) # make sure the path ends with '/'
     if '.csv' not in time_series_filename:
         time_series_filename = time_series_filename + '.csv'
     
+    
     # check if the files are in the input directory
     input_files = os.listdir(input_dir)
-    if analysis_type == "single map":
+    if analysis_type != "full":
         if time_series_filename not in input_files:
             warnings.warn("Time series file not found in the input directory. Please check the file name and input path.")
         else:
             time_series_path = os.path.join(input_dir, time_series_filename)
-        ROA_mask_path = None # placeholder
-        cell_mask_path = None # placeholder
         
-    if analysis_type == "two maps":
+        if analysis_type == "ROA-based":
+            if ROA_mask_filename not in input_files:
+                warnings.warn("ROA mask file not found in the input directory. Please check the file name and input path.")
+            else:
+                ROA_mask_path = os.path.join(input_dir, ROA_mask_filename)
+            cell_mask_path = None # placeholder
+            
+        elif analysis_type == "cell-based":
+            if cell_mask_filename not in input_files:
+                warnings.warn("Cell mask file not found in the input directory. Please check the file name and input path.")
+            else:
+                cell_mask_path = os.path.join(input_dir, cell_mask_filename)
+            ROA_mask_path = None # placeholder
+        
+    elif analysis_type == "full":
         if time_series_filename not in input_files:
             warnings.warn("Time series file not found in the input directory. Please check the file name and input path.")
         else:
@@ -60,8 +81,10 @@ def prompt_input(analysis_type = "two maps"):
             cell_mask_path = os.path.join(input_dir, cell_mask_filename)
     
     # output
-    output_dir = input('Enter the path to the folder for output files: ')
+    output_dir = input('Enter the path to the folder for output files (Hit Enter if wish to save to the input directory): ')
     output_filename = input('Enter the output file name: ')
+    if output_dir == "":
+        output_dir = input_dir
     output_path = os.path.join(output_dir, output_filename) 
     
     return time_series_path, ROA_mask_path, cell_mask_path, output_path
@@ -164,7 +187,7 @@ def visualize_map(ROA_map_array = np.empty(0), cell_map_array = np.empty(0)):
 
 def raw_to_filtered(csv_path, order = 4, cutoff = 0.4):
     '''
-    Read in and convert raw traces to filtered traces. 
+    Read in and convert raw traces to filtered traces using Butterworth filter. 
 
     Args:
     csv_path: path to the csv file containing raw traces.
@@ -177,10 +200,12 @@ def raw_to_filtered(csv_path, order = 4, cutoff = 0.4):
     '''
     
     # read in the csv data file in as a dataframe and transpose
-    # the csv file has no header and first column is the number of ROA
+    # the csv file has one row of header (Mean1, Mean2...) and first column is the number of ROA
     # in the original data frame, each row represents a frame and each column represents a ROA
     print("Reading in file: ", csv_path, "\n\n")
-    raw_data = pd.read_csv(csv_path, header = None, index_col = 0)
+    raw_data = pd.read_csv(csv_path, header = 0, index_col = 0)
+    if raw_data.columns[0] != "Mean1": # just in case when there's no header... 
+        raw_data = pd.read_csv(csv_path, header = None, index_col = 0)
     # transpose data so that each row represents a ROA and each column represents a frame
     # and transform to a numpy 2D array containing # of ROA lists,
     # each list containing signal in each frame for this ROA
@@ -195,7 +220,7 @@ def raw_to_filtered(csv_path, order = 4, cutoff = 0.4):
 
 def check_traces(traces):
     ''' 
-    Check the raw traces and print out the number of ROA and the number of frames.
+    Check the dimension of traces and print out the number of ROAs and the number of frames.
     '''
     
     (ROA_count, frame_count) = traces.shape
@@ -264,7 +289,9 @@ def check_correction(filtered_traces, corrected_traces, reg):
 
 def pull_largeslope_traces(ROA_count, reg):
     '''
-    Pull out ROA IDs that have user-defined large slope for further inspection.
+    Pull out ROA IDs that have user-defined large slope for further inspection. 
+    
+    Prompted input: reg_threshold (absolute value of the slope cutoff)
     '''
 
     reg_threshold = float(input("Enter the slope cutoff (absolute value) to pull out for check later:"))
@@ -340,7 +367,8 @@ def find_signal_boundary(trace, signal_threshold, baseline_threshold, include_en
                 signal_list.append((lpoint, rpoint))
 
     # find frame numbers for start and end of signals
-    signal_boundary = [(math.floor(lpoint),math.ceil(rpoint)) for (lpoint,rpoint) in signal_list] 
+    #signal_boundary = [(math.floor(lpoint),math.ceil(rpoint)) for (lpoint,rpoint) in signal_list] 
+    signal_boundary = signal_list
     return signal_boundary, signal_intercept, baseline_intercept
 
 def calc_dff(traces, signal_frames = None, baseline_start = 0, baseline_end = -1):
@@ -430,19 +458,19 @@ def iterative_baseline(traces, signal_frames = None, baseline_start = 0, baselin
     include_incomplete: optional, include incomplete signals at the end of the trace, default False
 
     Prompted inputs:
-    n_iteration: number of iterations for signal detection
-    signal_threshold: signal_threshold * dF/F baseline SD as signal threshold
+    n_iteration: number of iterations for signal detection.
+    signal_threshold: signal_threshold * dF/F baseline SD as signal threshold.
 
     Returns:
-    dff_traces: a two-dimensional array of delta F/F trace based on the provided thresholds
-    baselines: a one-dimensional array of baseline values
-    thresholds: a one-dimensional array of signal thresholds
+    dff_traces: a two-dimensional array of delta F/F trace based on the provided thresholds.
+    baselines: a one-dimensional array of baseline values.
+    thresholds: a one-dimensional array of signal thresholds.
     signal_frames: a two-dimensional boolean array corresponding to each ROA and each frame, true if frame is considered as signal
     signal_boundaries: a list of tuples of event start and end points of each detected activity in each ROA
     '''
 
     signal_frames_previous = signal_frames
-    n_iteration = int(input("Enter the number of iterations for signal detection. We found that most baseline determination stabilize after 6 iterations: "))
+    n_iteration = int(input("Enter the number of iterations for signal detection. We found that most baseline determination stabilize after 5 iterations: "))
     signal_threshold = float(input("Enter the signal threshold for signal detection. Trace fractions where the fluorescence is larger than signal_threshold * SD (suggested value 2-3) are determined as active signal: "))
     print(f"Using signal threshold of {signal_threshold}* SD and detecting baseline from frame {baseline_start} to {baseline_end}.\n")
 
@@ -468,8 +496,19 @@ def check_ROA(signal_frames):
 
 def analyze_signal(dff_traces, signal_frames, signal_boundaries, frame_rate, drug_frame):
 
-    '''analyze the signals and return a dataframe with signal stats (columns) for each individual signal/event (rows)'''
+    '''
+    Analyze the signals and return a dataframe with signal stats (columns) for each individual signal/event (rows).
     
+    Args:
+    dff_traces: a two-dimensional array of delta F/F trace.
+    signal_frames: a two-dimensional boolean array corresponding to each ROA and each frame, true if frame is considered as signal.
+    signal_boundaries: a list of tuples of event start and end points of each detected activity in each ROA. 
+    frame_rate: the frame rate of the recording.
+    drug_frame: the frame number of drug application.
+    
+    Returns:
+    signal_features: a dataframe with signal stats/features for each individual signal/event.
+    '''
 
     (ROA_count, frame_count) = dff_traces.shape 
     noise = np.multiply(dff_traces, signal_frames == False).max(axis = 1) # extract baseline noise (max amplitude within baseline) for each ROA
@@ -501,11 +540,11 @@ def analyze_signal(dff_traces, signal_frames, signal_boundaries, frame_rate, dru
             
             if rpoint + 1 > frame_count: # if the current signal is an incomplete signal at the end of the trace
                 
-                start_frame.append(lpoint + 1)
+                start_frame.append(lpoint)
                 start_time.append(lpoint/frame_rate)
                 end_frame.append(np.nan)
                 end_time.append(np.nan)
-                event_trace = dff_traces[i_ROA,lpoint:rpoint+1]
+                event_trace = dff_traces[i_ROA,math.ceil(lpoint):]
 
                 AUC.append(np.nan) # AUC not calculatable
                 amplitude.append(max(event_trace))  # signal amplitude
@@ -515,7 +554,6 @@ def analyze_signal(dff_traces, signal_frames, signal_boundaries, frame_rate, dru
                 peak_frame.append(lpoint + max_index[0]) # max dff index (frame number) within the whole trace 
                 peak_time.append(peak_frame[-1]/frame_rate) # peak time in seconds
 
-                half = scipy.signal.peak_widths(event_trace, max_index, rel_height=0.5)
                 prct_10 = scipy.signal.peak_widths(event_trace, max_index, rel_height=0.1)
                 prct_90 = scipy.signal.peak_widths(event_trace, max_index, rel_height=0.9)
 
@@ -525,12 +563,13 @@ def analyze_signal(dff_traces, signal_frames, signal_boundaries, frame_rate, dru
                 duration.append(np.nan) # duration of the signal/event in seconds
             
             else:
-                start_frame.append(lpoint + 1)
+                
+                start_frame.append(lpoint)
                 start_time.append(lpoint/frame_rate)
-                end_frame.append(rpoint + 1)
+                end_frame.append(rpoint)
                 end_time.append(rpoint/frame_rate)
 
-                event_trace = dff_traces[i_ROA,lpoint:rpoint+1] # subset out only the signal/event
+                event_trace = dff_traces[i_ROA,math.ceil(lpoint):math.floor(rpoint)+1] # subset out only the signal/event
 
                 AUC.append(scipy.integrate.simpson(event_trace, dx = 1/frame_rate)) # area under the curve using Simpson's rule
                 amplitude.append(max(event_trace))  # signal amplitude
@@ -552,36 +591,36 @@ def analyze_signal(dff_traces, signal_frames, signal_boundaries, frame_rate, dru
             if j_signal == 0:
                 inter_event_interval.append(None) # initialize inter-event interval for thr first signal as None
             else:
-                inter_event_interval.append((lpoint + 1 - end_frame[-2])/frame_rate) # calculate inter-event interval from the last event
+                inter_event_interval.append((lpoint + 1 - end_time[-2])/frame_rate) # calculate inter-event interval from the last event
         
     
-    signal_stats = pd.DataFrame({'ROA_ID': ROA_ID, 
-                                 'signal_start_frame': start_frame, 
-                                 'signal_start_time': start_time,
-                                 'signal_end_frame': end_frame, 
-                                 'signal_end_time': end_time,
-                                 'peak_frame': peak_frame, 
-                                 'peak_time': peak_time, 
-                                 'AUC': AUC, 
-                                 'amplitude': amplitude, 
-                                 'signal_to_noise': signal_to_noise,
-                                 'rise_time': rise_time, 
-                                 'decay_time': decay_time, 
-                                 'half_width': half_width, 
-                                 'duration': duration,
-                                 'inter_event_interval': inter_event_interval})
+    signal_features = pd.DataFrame({'ROA_ID': ROA_ID, 
+                                    'signal_start_frame': start_frame, 
+                                    'signal_start_time': start_time,
+                                    'signal_end_frame': end_frame, 
+                                    'signal_end_time': end_time,
+                                    'peak_frame': peak_frame, 
+                                    'peak_time': peak_time, 
+                                    'AUC': AUC, 
+                                    'amplitude': amplitude, 
+                                    'signal_to_noise': signal_to_noise,
+                                    'rise_time': rise_time, 
+                                    'decay_time': decay_time, 
+                                    'half_width': half_width, 
+                                    'duration': duration,
+                                    'inter_event_interval': inter_event_interval})
     
     # add column to indicate if the signal peaks before drug application (baseline) or after (drug)
     if drug_frame == 0:
-        signal_stats['epoch'] = 'NA'
+        signal_features['epoch'] = 'NA'
     else:
-        signal_stats['epoch'] = np.where(signal_stats['peak_frame'] < drug_frame, 'baseline', 'drug')
+        signal_features['epoch'] = np.where(signal_features['peak_frame'] < drug_frame, 'baseline', 'drug')
                                  
-    return signal_stats
+    return signal_features
 
 def align_ROA_cell(ROA_map_labeled, cell_map_labeled, ROA_map_count, spatial_resolution):
     ''' 
-    aline ROA_ID and cell_ID based on the labeled map and returns a dataframe with ROA and cell alignment
+    Aline ROA_ID and cell_ID based on the labeled map and return a dataframe ROA_info with ROA and cell alignment.
     '''
 
     ROA = range(1, ROA_map_count+1)
@@ -604,18 +643,40 @@ def align_ROA_cell(ROA_map_labeled, cell_map_labeled, ROA_map_count, spatial_res
                 ROA_not_assigned.append(i_ROA)
         ROA_cell.append(most_frequent) # assign the most common cell ID for the ROA as its cell registration
 
-    df_ROA_cell = pd.DataFrame({'ROA_ID': ROA, 'cell_ID': ROA_cell, 'size_pixel' : size_pixel})
-    df_ROA_cell['size_um2'] = df_ROA_cell['size_pixel'] * spatial_resolution**2
+    ROA_info = pd.DataFrame({'ROA_ID': ROA, 'cell_ID': ROA_cell, 'size_pixel' : size_pixel})
+    ROA_info['size_um2'] = ROA_info['size_pixel'] * spatial_resolution**2
 
     if len(ROA_not_assigned) != 0:
         print(f"There are {len(ROA_not_assigned)} ({round(len(ROA_not_assigned)/ROA_map_count * 100,2)}%) ROAs not assigned to any cell.")
         print("ROA IDs:", ROA_not_assigned)
         print("Please double check the cell mask registration. \n")
     print("ROA and cell alignment completed.")
-    return df_ROA_cell
+    return ROA_info
 
-def ROA_analysis(signal_stats, df_ROA_cell, frame_count, frame_rate, drug_frame):
-    '''analyze the signals based on the ROA and return a dataframe with ROA stats (columns) for each individual ROA (rows)'''
+def size_ROA(ROA_map_labeled, ROA_map_count, spatial_resolution):
+    '''
+    Extract size information in pixel and convert to um^2 for each ROA. 
+    Use this function instead of align_ROA_cell when doing ROA-based analysis (without cell segmentation). 
+    '''
+    
+    ROA = range(1, ROA_map_count+1)
+    size_pixel = []
+    
+    for i_ROA in ROA:
+        i_size = np.sum(ROA_map_labeled == i_ROA)
+        size_pixel.append(i_size)
+    ROA_info = pd.DataFrame({'ROA_ID': ROA, 'size_pixel' : size_pixel})
+    ROA_info['size_um2'] = ROA_info['size_pixel'] * spatial_resolution**2
+    
+    return ROA_info
+
+def ROA_analysis(signal_stats, ROA_info, frame_count, frame_rate, drug_frame, cell_segmentation = False):
+    '''
+    Analyze signals based on ROA and return a dataframe with ROA stats (columns) for each individual ROA (rows).
+    
+    Args:
+    signal_stats: 
+    '''
 
     # calculate the signal features based on ROA
     ROA_based_count = signal_stats.groupby(['ROA_ID', 'epoch'], as_index = False).count()
@@ -623,7 +684,7 @@ def ROA_analysis(signal_stats, df_ROA_cell, frame_count, frame_rate, drug_frame)
     ROA_based['signal_count'] = ROA_based_count['AUC']
 
     # identify ROA type (inactive, stable, on, off, NA) based on activity during baseline and after drug application
-    ROA = df_ROA_cell.ROA_ID
+    ROA = ROA_info.ROA_ID
     ROA_type = []
 
     for i_ROA in ROA:
@@ -640,9 +701,13 @@ def ROA_analysis(signal_stats, df_ROA_cell, frame_count, frame_rate, drug_frame)
         else:
             ROA_type.append('inactive')
 
-    df_ROA_cell['ROA_type'] = ROA_type
-    ROA_based = pd.merge(df_ROA_cell[['ROA_ID', 'cell_ID', 'ROA_type']], ROA_based, 
-                         on = ['ROA_ID', 'cell_ID'], how = 'left')
+    ROA_info['ROA_type'] = ROA_type
+    if cell_segmentation == True:
+        ROA_based = pd.merge(ROA_info[['ROA_ID', 'cell_ID', 'ROA_type', 'size_um2']], ROA_based, 
+                            on = ['ROA_ID', 'cell_ID'], how = 'left')
+    else:
+        ROA_based = pd.merge(ROA_info[['ROA_ID', 'ROA_type', 'size_um2']], ROA_based, 
+                            on = ['ROA_ID'], how = 'left')
 
     ROA_based['signal_count'] = np.where(ROA_based['ROA_type'] == 'inactive', 0, ROA_based['signal_count'])
 
@@ -658,23 +723,33 @@ def ROA_analysis(signal_stats, df_ROA_cell, frame_count, frame_rate, drug_frame)
     ROA_based['rec_length'] = np.where(ROA_based['epoch'] == 'drug', drug_length_min, ROA_based['rec_length'])
     ROA_based['frequency_permin'] = ROA_based['signal_count']/ROA_based['rec_length']   
 
-    cols = ['ROA_ID','cell_ID','ROA_type','size_um2','epoch','AUC','amplitude','signal_to_noise','rise_time','decay_time','half_width','duration','inter_event_interval', 'signal_count', 'frequency_permin']
-    return ROA_based[cols], df_ROA_cell
+    if cell_segmentation:
+        cols = ['ROA_ID', 'cell_ID', 'ROA_type', 'size_um2', 'epoch',
+                'AUC','amplitude','signal_to_noise','rise_time','decay_time','half_width','duration',
+                'inter_event_interval', 'signal_count', 'frequency_permin']
+    else:
+        cols = ['ROA_ID', 'ROA_type', 'size_um2', 'epoch',
+                'AUC','amplitude', 'signal_to_noise', 'rise_time', 'decay_time', 'half_width', 'duration',
+                'inter_event_interval', 'signal_count', 'frequency_permin']
+    return ROA_based[cols], ROA_info
 
-def ROA_type_summary(df_ROA_cell):
-    ROA_summary = df_ROA_cell.groupby('ROA_type').count()
-    ROA_summary.rename(columns = {'ROA_ID':'count'}, inplace = True)
-    ROA_summary = ROA_summary.drop(columns=['cell_ID', 'size_pixel', 'size_um2'])
+def ROA_type_summary(ROA_info):
+    '''
+    Count the number of ROAs that belongs to each category (inactive, stable, on, off, and NA). 
+    '''
     
+    ROA_sub = ROA_info[['ROA_ID', 'ROA_type']]
+    ROA_summary = ROA_sub.groupby('ROA_type').count()
+    ROA_summary.rename(columns = {'ROA_ID':'count'}, inplace = True)
     ROA_summary['percentage'] = ROA_summary['count']/ROA_summary['count'].sum() * 100
     
     return ROA_summary
 
-def cell_analysis(signal_stats, df_ROA_cell):
+def cell_analysis(signal_stats, ROA_info):
     '''
     Analyze the signal stats at the cell level.
     '''
-    cell_based_ROA_count = df_ROA_cell.groupby(['cell_ID'], as_index = False).count()
+    cell_based_ROA_count = ROA_info.groupby(['cell_ID'], as_index = False).count()
     cell_based_ROA_count = cell_based_ROA_count[['cell_ID', 'ROA_ID']]
     cell_based_ROA_count.columns = ['cell_ID', 'ROA_count']
     cell_based_signal_count = signal_stats.groupby(['cell_ID', 'epoch'], as_index = False).count()
@@ -688,14 +763,14 @@ def cell_analysis(signal_stats, df_ROA_cell):
 def inspect_trace(ROA_IDs, dff_traces, baselines, thresholds, drug_frame):
     
     ''' 
-    inspect trace visually with baseline, signal threshold and drug application time indicated
+    Inspect trace visually with baseline, signal threshold and drug application time indicated.
     
     Args:
-    ROA_IDs: input ROA_IDs (iterable) to visually inspect
-    dff_traces: 2D array of dF/F traces
-    baselines: 1D array of baseline values
-    thresholds: 1D array of signal thresholds
-    drug_frame: frame number of drug application (int)
+        ROA_IDs: input ROA_IDs (iterable) to visually inspect.
+        dff_traces: 2D array of dF/F traces.
+        baselines: 1D array of baseline values.
+        thresholds: 1D array of signal thresholds.
+        drug_frame: frame number of drug application (int).
     '''
     frame_count = dff_traces.shape[1]
     x = np.arange(frame_count)
@@ -714,18 +789,8 @@ def inspect_trace(ROA_IDs, dff_traces, baselines, thresholds, drug_frame):
         plt.title('ROA ID: ' + str(i_ROA))
         plt.show(block = False)
 
-def metadata_todf():
-    '''
-    Generate a metadata dataframe for the recording.
-    '''
-    global frame_rate, spatial_resolution, drug_frame, signal_threshold
-    metadata = pd.DataFrame({'frame_rate': [frame_rate], 'spatial_resolution': [spatial_resolution],
-                             'drug_frame': [drug_frame], 'drug_time': [drug_frame/frame_rate], 
-                             'signal_threshold': [signal_threshold]})
-    return metadata
-
-def output_data(output_path, metadata, dff_traces, signal_features, 
-                save_as = 'csv', ROA_based = None, df_ROA_cell = None, ROA_summary = None, cell_based = None):
+def output_data(output_path, metadata, dff_traces, signal_features, save_as = 'csv', 
+                ROA_based = None, ROA_info = None, ROA_summary = None, cell_based = None):
 
     '''
     Save the output dataframes to csv or excel.
@@ -738,8 +803,8 @@ def output_data(output_path, metadata, dff_traces, signal_features,
         signal_features.to_csv(output_path + '_signal_features.csv', index = False)
         if ROA_based is not None:
             ROA_based.to_csv(output_path + '_ROA_based.csv', index = False)
-        if df_ROA_cell is not None:
-            df_ROA_cell.to_csv(output_path + '_ROA_cell_key.csv', index = False)
+        if ROA_info is not None:
+            ROA_info.to_csv(output_path + '_ROA_cell_key.csv', index = False)
         if ROA_summary is not None:
             ROA_summary.to_csv(output_path + '_ROA_type_summary.csv', index = False)
         if cell_based is not None:
@@ -752,8 +817,8 @@ def output_data(output_path, metadata, dff_traces, signal_features,
             signal_features.to_excel(writer, sheet_name ='signal features')
             if ROA_based is not None:
                 ROA_based.to_excel(writer, sheet_name = 'ROA based')
-            if df_ROA_cell is not None:
-                df_ROA_cell.to_excel(writer, sheet_name = 'ROA cell key')
+            if ROA_info is not None:
+                ROA_info.to_excel(writer, sheet_name = 'ROA cell key')
             if ROA_summary is not None:
                 ROA_summary.to_excel(writer, sheet_name = 'ROA type summary')
             if cell_based is not None:
