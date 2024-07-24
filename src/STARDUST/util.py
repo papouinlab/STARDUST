@@ -213,7 +213,7 @@ def raw_to_filtered(csv_path, order = 4, cutoff = 0.4):
 
     # apply a lowpass Butterworth filter with a 4th order filter at the cutoff of 0.4 Hz
     print("Applying a lowpass Butterworth filter with a", str(order), "th order filter at the cutoff of", str(cutoff), "Hz")
-    b, a = scipy.signal.butter(order, cutoff, 'low', analog=False)
+    b, a = scipy.signal.butter(order, cutoff, 'low', analog = False)
     filtered_traces = scipy.signal.filtfilt(b, a, raw_traces)
 
     return raw_traces, filtered_traces
