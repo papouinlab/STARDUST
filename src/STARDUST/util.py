@@ -731,11 +731,11 @@ def ROA_analysis(signal_stats, ROA_info, frame_count, frame_rate, drug_frame, ce
 
     ROA_info['ROA_type'] = ROA_type
     if cell_segmentation == True:
-        ROA_based = pd.merge(ROA_info[['ROA_ID', 'cell_ID', 'ROA_type', 'size_um2']], ROA_based, 
-                            on = ['ROA_ID', 'cell_ID'], how = 'left')
+        ROA_based = pd.merge(ROA_based, ROA_info[['ROA_ID', 'cell_ID', 'ROA_type', 'size_um2']], 
+                            on = ['ROA_ID', 'cell_ID'], how = 'right')
     else:
-        ROA_based = pd.merge(ROA_info[['ROA_ID', 'ROA_type', 'size_um2']], ROA_based, 
-                            on = ['ROA_ID'], how = 'left')
+        ROA_based = pd.merge(ROA_based, ROA_info[['ROA_ID', 'ROA_type', 'size_um2']],
+                            on = ['ROA_ID'], how = 'right')
 
     ROA_based['signal_count'] = np.where(ROA_based['ROA_type'] == 'inactive', 0, ROA_based['signal_count'])
 
@@ -750,7 +750,8 @@ def ROA_analysis(signal_stats, ROA_info, frame_count, frame_rate, drug_frame, ce
     ROA_based['rec_length'] = np.where(ROA_based['epoch'] == 'baseline', baseline_length_min, ROA_based['rec_length'])
     ROA_based['rec_length'] = np.where(ROA_based['epoch'] == 'drug', drug_length_min, ROA_based['rec_length'])
     ROA_based['frequency_permin'] = ROA_based['signal_count']/ROA_based['rec_length']   
-
+    ROA_based = pd.merge(ROA_based, ROA_info[['ROA_ID', 'size_um2']], on = 'ROA_ID', how = 'right')
+    
     if cell_segmentation:
         cols = ['ROA_ID', 'cell_ID', 'ROA_type', 'size_um2', 'epoch',
                 'AUC','amplitude','signal_to_noise','rise_time','decay_time','half_width','duration',
