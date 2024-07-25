@@ -1,0 +1,13 @@
+name: STARDUST
+channels:
+  - defaults
+  - base 
+dependencies:
+  - python==3.11
+  - notebook
+  - scipy>=1.11.0
+  - numpy==1.26.4
+  - pandas>=2.1.4
+  - matplotlib==3.8.0
+  - seaborn==0.12.2
+  - pillow==10.2.0
