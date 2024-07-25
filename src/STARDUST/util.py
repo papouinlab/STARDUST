@@ -3,6 +3,34 @@ import scipy.signal
 import os, io, warnings, math, scipy, numpy as np, pandas as pd, matplotlib.pyplot as plt, seaborn as sns
 from PIL import Image
  
+def check_modules():
+    '''
+    Check module version for STARDUST. 
+    '''
+    tracking = 1
+    if scipy.__version__ < '1.11.0':
+        print('Please update SciPy to 1.11.0 or higher.')
+        tracking = 0
+    if np.__version__ < '1.26.4':
+        print('Please update NumPy to 1.11.0 or higher.')
+        tracking = 0
+    if pd.__version__ < '2.1.4':
+        print('Please update Pandas to 2.1.4 or higher.')
+        tracking = 0
+    if matplotlib.__version__ < '3.8.0':
+        print('Please update Matplotlib to 3.8.0 or higher.')
+        tracking = 0
+    if sns.__version__ < '0.12.2':
+        print('Please update Seaborn to 0.12.2 or higher.')
+        tracking = 0
+    if PIL.__version__ < '10.2.0':
+        print('Please update pillow to 10.2.0 or higher.')
+        tracking = 0
+    
+    if tracking == 1:
+        print('All module version requirements are met for STARDUST. You\'re good to go!')
+         
+
 def check_path(dir):
     if "/" in dir: # mac
         if dir[-1] != "/":
