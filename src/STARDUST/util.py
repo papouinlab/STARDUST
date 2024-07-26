@@ -1,6 +1,7 @@
 # util.py
 import scipy.signal
-import os, io, warnings, math, scipy, numpy as np, pandas as pd, matplotlib.pyplot as plt, seaborn as sns
+import os, io, warnings, math, scipy, numpy as np, pandas as pd, matplotlib, PIL, seaborn as sns
+import matplotlib.pyplot as plt
 from PIL import Image
  
 def check_modules():
@@ -776,7 +777,7 @@ def ROA_type_summary(ROA_info):
 
 def cell_analysis(signal_stats, ROA_info):
     '''
-    Analyze the signal stats at the cell level.
+    Analyze the signal stats at the cell level. Cell-assigned ROA analysis. 
     '''
     cell_based_ROA_count = ROA_info.groupby(['cell_ID'], as_index = False).count()
     cell_based_ROA_count = cell_based_ROA_count[['cell_ID', 'ROA_ID']]
@@ -788,6 +789,32 @@ def cell_analysis(signal_stats, ROA_info):
     cols = ['cell_ID', 'epoch', 'signal_count', 'AUC', 'amplitude', 'signal_to_noise', 'rise_time', 'decay_time', 'half_width', 'duration']
     cell_based = pd.merge(cell_based_ROA_count, cell_based[cols], on = 'cell_ID', how = 'right')
     return cell_based
+
+def cell_based(signal_features, frame_count, frame_rate, drug_frame):
+    
+    '''
+    Calculate the signal stats at the cell level for cell-based analysis. 
+    '''
+    
+    cell_based_count = signal_features.groupby(['ROA_ID', 'epoch'], as_index = False).count()
+    cell_based = signal_features.groupby(['ROA_ID', 'epoch'], as_index = False).mean()
+    cell_based['signal_count'] = cell_based_count['AUC']
+    cell_based['cell_ID'] = cell_based['ROA_ID']
+    
+    # calculate recording total, baseline and drug length (in minutes) for frequency calculation
+    total_length_min = frame_count/(frame_rate*60)
+    baseline_length_min = drug_frame/(frame_rate*60)
+    drug_length_min = total_length_min - baseline_length_min
+    
+    cell_based['rec_length'] = np.nan
+    cell_based['rec_length'] = np.where(cell_based['epoch'] == 'NA', total_length_min, cell_based['rec_length'])
+    cell_based['rec_length'] = np.where(cell_based['epoch'] == 'baseline', baseline_length_min, cell_based['rec_length'])
+    cell_based['rec_length'] = np.where(cell_based['epoch'] == 'drug', drug_length_min, cell_based['rec_length'])
+    cell_based['frequency_permin'] = cell_based['signal_count']/cell_based['rec_length']
+    
+    cols = ['cell_ID', 'epoch', 'signal_count', 'AUC', 'amplitude', 'signal_to_noise', 'rise_time', 'decay_time', 'half_width', 'duration',
+            'inter_event_interval', 'frequency_permin']
+    return cell_based[cols]
 
 def inspect_trace(ROA_IDs, dff_traces, baselines, thresholds, drug_frame):
     
@@ -819,7 +846,7 @@ def inspect_trace(ROA_IDs, dff_traces, baselines, thresholds, drug_frame):
         plt.show(block = False)
 
 def output_data(output_path, metadata, dff_traces, signal_features, save_as = 'csv', 
-                ROA_based = None, ROA_info = None, ROA_summary = None, cell_based = None):
+                ROA_based = None, ROA_info = None, ROA_summary = None, cell_based = None, cell_assigned = None):
 
     '''
     Save the output dataframes to csv or excel.
@@ -835,9 +862,11 @@ def output_data(output_path, metadata, dff_traces, signal_features, save_as = 'c
         if ROA_info is not None:
             ROA_info.to_csv(output_path + '_ROA_cell_key.csv', index = False)
         if ROA_summary is not None:
-            ROA_summary.to_csv(output_path + '_ROA_type_summary.csv', index = False)
+            ROA_summary.to_csv(output_path + '_ROA_type_summary.csv', index = True)
         if cell_based is not None:
             cell_based.to_csv(output_path + '_cell_based.csv', index = False)
+        if cell_assigned is not None:
+            cell_assigned.to_csv(output_path + '_cell_assigned_ROA_analysis.csv', index = False)
     
     elif save_as.lower() == 'excel':
         print("Saving outputs as an excel file...")
@@ -852,6 +881,8 @@ def output_data(output_path, metadata, dff_traces, signal_features, save_as = 'c
                 ROA_summary.to_excel(writer, sheet_name = 'ROA type summary')
             if cell_based is not None:
                 cell_based.to_excel(writer, sheet_name = 'cell based')
+            if cell_assigned is not None:
+                cell_assigned.to_excel(writer, sheet_name = 'cell-assigned ROA analysis')
     else:
         Warning('Invalid file format. Please choose csv or excel.')
     
