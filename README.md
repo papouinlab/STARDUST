@@ -26,9 +26,11 @@ Example data and analyses are deposited on zenodo https://zenodo.org/doi/10.5281
 # Updates
 2024/05/30: Make repository public.   
 2024/07/29: Add STARDUST ROA-based and STARDUST cell-based versions.   
+2024/09/20: STARDUST published on STAR Protocols. 
 
 # Reference
-Wu, Y., Dai, Y., Lefton, K. B., Holy, T. E. & Papouin, T. [*STARDUST: a pipeline for the unbiased analysis of astrocyte regional calcium dynamics.*](https://doi.org/10.1101/2024.04.04.588196) bioRxiv 2024.04.04.588196 (2024) doi:10.1101/2024.04.04.588196.  
+Wu, Y., Dai, Y., Lefton, K. B., Holy, T. E. & Papouin, T. [*STARDUST: A pipeline for the unbiased analysis of astrocyte regional calcium dynamics.*](https://doi.org/10.1016/j.xpro.2024.103305) STAR Protocols 5, 103305 (2024).
+
 
 # Acknowledgement
 We would like to acknowlege Jiaxin Chelsy Li (at Tufts University) for designing the STARDUST logo. 
