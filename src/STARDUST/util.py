@@ -751,7 +751,7 @@ def ROA_analysis(signal_stats, ROA_info, frame_count, frame_rate, drug_frame, ce
     ROA_based['rec_length'] = np.where(ROA_based['epoch'] == 'baseline', baseline_length_min, ROA_based['rec_length'])
     ROA_based['rec_length'] = np.where(ROA_based['epoch'] == 'drug', drug_length_min, ROA_based['rec_length'])
     ROA_based['frequency_permin'] = ROA_based['signal_count']/ROA_based['rec_length']   
-    ROA_based = pd.merge(ROA_based, ROA_info[['ROA_ID', 'size_um2']], on = 'ROA_ID', how = 'right')
+    ROA_based = pd.merge(ROA_based, ROA_info[['ROA_ID']], on = 'ROA_ID', how = 'right')
     
     if cell_segmentation:
         cols = ['ROA_ID', 'cell_ID', 'ROA_type', 'size_um2', 'epoch',
