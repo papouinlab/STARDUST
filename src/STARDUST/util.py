@@ -1,5 +1,6 @@
 # util.py
 import scipy.signal
+
 import os, io, warnings, math, scipy, numpy as np, pandas as pd, matplotlib, PIL, seaborn as sns
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -408,7 +409,7 @@ def calc_dff(traces, signal_frames = None, baseline_start = 0, baseline_end = -1
     returns two two-dimensional arrays: dff_traces and dff_traces_nosignal
 
     Args:
-    traces: a two-dimensional array of traces, each row represents a ROA and each column represents a frame
+    traces: a two-dimensional array of traces, each row represents a ROA and each coltemn represents a frame
     signal_frames: a two-dimensional boolean array corresponding to each ROA and each frame, true if frame is considered as signal
     baseline_start: optional, the starting frame for baseline calculation, default 0
     baseline_end: optional, the ending frame for baseline calculation, default -1 (end of the trace)
@@ -614,7 +615,7 @@ def analyze_signal(dff_traces, signal_frames, signal_boundaries, frame_rate, dru
 
                 rise_time.append((prct_10[2][0] - prct_90[2][0])/frame_rate) # rise time in seconds
                 decay_time.append((prct_90[3][0] - prct_10[3][0])/frame_rate) # decay time in seconds
-                half_width.append(half[1][0]/frame_rate) # full width at half maximum in seconds
+                half_width.append(half[0][0]/frame_rate) # full width at half maximum in seconds
                 duration.append((rpoint - lpoint)/frame_rate) # duration of the signal/event in seconds
 
             if j_signal == 0:
