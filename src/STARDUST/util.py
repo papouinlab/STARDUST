@@ -733,7 +733,7 @@ def ROA_analysis(signal_stats, ROA_info, frame_count, frame_rate, drug_frame, ce
 
     ROA_info['ROA_type'] = ROA_type
     if cell_segmentation == True:
-        ROA_based = pd.merge(ROA_based, ROA_info[['ROA_ID', 'cell_ID', 'ROA_type', 'size_um2']], 
+        ROA_based = pd.merge(ROA_based, ROA_info[['ROA_ID', 'cell_ID', 'ROA_type']], 
                             on = ['ROA_ID', 'cell_ID'], how = 'right')
     else:
         ROA_based = pd.merge(ROA_based, ROA_info[['ROA_ID', 'ROA_type', 'size_um2']],
